@@ -3,8 +3,8 @@ const { promisify } = require('util');
 const execAsync = promisify(exec);
 const path = require('path');
 
-// Path to CLI script
-const CLI_PATH = path.join(__dirname, '../src/cli.js');
+// Path to CLI script - Fix the path to use the correct directory
+const CLI_PATH = path.resolve(__dirname, '../src/cli.js');
 
 describe('ARVIL CLI', () => {
   // Test that CLI executes and shows help

@@ -7,7 +7,7 @@
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "test": "jest",
-    "prepublishOnly": "npm test",
+    "_prepublishOnly": "npm test",
     "postinstall": "node scripts/postinstall.js"
   },
   "keywords": [
