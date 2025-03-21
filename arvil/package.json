@@ -1,0 +1,64 @@
+{
+  "name": "arvil-cli",
+  "version": "0.1.0",
+  "description": "ARVIL - Blockchain AI Engineer Assistant for Solana",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "test": "jest",
+    "prepublishOnly": "npm test",
+    "postinstall": "node scripts/postinstall.js"
+  },
+  "keywords": [
+    "blockchain",
+    "ai",
+    "solana",
+    "assistant",
+    "developer-tool",
+    "smart-contracts",
+    "cli",
+    "openai",
+    "web3"
+  ],
+  "author": "Your Name <your.email@example.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yourusername/arvil.git"
+  },
+  "homepage": "https://github.com/yourusername/arvil#readme",
+  "bugs": {
+    "url": "https://github.com/yourusername/arvil/issues"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.78.0",
+    "commander": "^10.0.1",
+    "dotenv": "^16.3.1",
+    "inquirer": "^8.2.5",
+    "openai": "^4.0.0",
+    "chalk": "^4.1.2",
+    "ora": "^5.4.1",
+    "axios": "^1.4.0",
+    "fs-extra": "^11.1.1",
+    "figlet": "^1.6.0"
+  },
+  "devDependencies": {
+    "jest": "^29.5.0",
+    "nodemon": "^3.0.1"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "bin": {
+    "arvil": "./src/cli.js"
+  },
+  "files": [
+    "src/",
+    "scripts/",
+    "docs/assets/",
+    "README.md",
+    "LICENSE",
+    "GETTING-STARTED.md"
+  ]
+} 

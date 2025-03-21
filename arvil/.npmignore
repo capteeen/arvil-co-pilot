@@ -1,0 +1,42 @@
+# Development files
+.git/
+.github/
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo
+
+# Test files
+test/
+tests/
+__tests__/
+coverage/
+jest.config.js
+
+# Docs that shouldn't be in the npm package
+docs/contributing/
+docs/development/
+
+# Build artifacts
+dist/*.map
+*.log
+logs/
+
+# Configuration files
+.eslintrc
+.eslintignore
+.prettierrc
+.prettierignore
+tsconfig.json
+
+# Temporary files
+tmp/
+temp/
+
+# Miscellaneous
+node_modules/
+*.tgz
+.travis.yml
+.gitlab-ci.yml
+*.tsbuildinfo 

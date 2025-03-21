@@ -1,0 +1,14 @@
+You will need to create a banner image for your project.
+Replace this file with 'arvil-banner.png' - a wide banner image (1280x320px recommended)
+that displays the ARVIL logo and name.
+
+For now, you can use the ASCII art from the CLI or create a simple image using tools like:
+- Figma
+- Canva
+- Adobe Illustrator
+- GIMP
+
+Your banner should include:
+- The ARVIL name
+- Optionally a tagline "Blockchain AI Engineer"
+- Visual elements related to blockchain and AI 
