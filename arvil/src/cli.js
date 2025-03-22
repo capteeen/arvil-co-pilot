@@ -12,13 +12,51 @@ const dotenv = require('dotenv');
 // Load environment variables
 dotenv.config();
 
-// Import commands
-const init = require('./commands/init');
-const deploy = require('./commands/deploy');
-const assist = require('./commands/assist');
-const compile = require('./commands/compile');
-const test = require('./commands/test');
-const config = require('./commands/config');
+// Version
+const VERSION = '0.1.4';
+
+// Add error handling to prevent crashes
+process.on('uncaughtException', (error) => {
+  // Only show errors for commands other than --version or --help
+  const isVersionOrHelp = process.argv.includes('--version') || 
+                          process.argv.includes('-V') ||
+                          process.argv.includes('--help') ||
+                          process.argv.includes('-h');
+  
+  if (!isVersionOrHelp) {
+    console.error(chalk.red('Error: ') + error.message);
+    
+    if (error.message.includes('OPENAI_API_KEY')) {
+      console.log(chalk.yellow('\nPlease set your OpenAI API key by running:'));
+      console.log(chalk.cyan('  arvil config'));
+    }
+  }
+  
+  // For version and help commands, allow normal processing
+  if (!isVersionOrHelp) {
+    process.exit(1);
+  }
+});
+
+// Import commands - Wrapped in try/catch to prevent crashes on version/help
+let init, deploy, assist, compile, test, config;
+try {
+  init = require('./commands/init');
+  deploy = require('./commands/deploy');
+  assist = require('./commands/assist');
+  compile = require('./commands/compile');
+  test = require('./commands/test');
+  config = require('./commands/config');
+} catch (error) {
+  // Silently fail for version/help commands
+  if (!(process.argv.includes('--version') || 
+        process.argv.includes('-V') ||
+        process.argv.includes('--help') ||
+        process.argv.includes('-h'))) {
+    console.error(chalk.red('Error loading commands: ') + error.message);
+    process.exit(1);
+  }
+}
 
 // Check if OpenAI API key is set
 const checkApiKey = () => {
@@ -29,92 +67,111 @@ const checkApiKey = () => {
 };
 
 // Display banner
-console.log(
-  chalk.cyan(
-    figlet.textSync('ARVIL', { horizontalLayout: 'full' })
-  )
-);
-console.log(chalk.cyan('Blockchain AI Engineer - v0.1.0\n'));
+try {
+  console.log(
+    chalk.cyan(
+      figlet.textSync('ARVIL', { horizontalLayout: 'full' })
+    )
+  );
+  console.log(chalk.cyan(`Blockchain AI Engineer - v${VERSION}\n`));
+} catch (error) {
+  // Fallback if figlet fails
+  console.log(chalk.cyan('ARVIL - Blockchain AI Engineer'));
+  console.log(chalk.cyan(`Version ${VERSION}\n`));
+}
 
 // Check API key
 checkApiKey();
 
 // Define CLI commands
 program
-  .version('0.1.0')
+  .version(VERSION)
   .description('ARVIL - Blockchain AI Engineer Assistant');
 
-// Init command
-program
-  .command('init [projectName]')
-  .description('Initialize a new blockchain project')
-  .action(async (projectName) => {
-    if (!projectName) {
-      const response = await inquirer.prompt([
-        {
-          type: 'input',
-          name: 'projectName',
-          message: 'What is the name of your project?',
-          default: 'my-blockchain-project'
-        }
-      ]);
-      projectName = response.projectName;
-    }
-    
-    init(projectName);
-  });
+// Only add command handlers if they loaded successfully
+if (init) {
+  // Init command
+  program
+    .command('init [projectName]')
+    .description('Initialize a new blockchain project')
+    .action(async (projectName) => {
+      if (!projectName) {
+        const response = await inquirer.prompt([
+          {
+            type: 'input',
+            name: 'projectName',
+            message: 'What is the name of your project?',
+            default: 'my-blockchain-project'
+          }
+        ]);
+        projectName = response.projectName;
+      }
+      
+      init(projectName);
+    });
+}
 
-// Deploy command
-program
-  .command('deploy')
-  .description('Deploy your smart contract to the blockchain')
-  .option('-n, --network <network>', 'Network to deploy to', 'devnet')
-  .action((options) => {
-    deploy(options);
-  });
+if (deploy) {
+  // Deploy command
+  program
+    .command('deploy')
+    .description('Deploy your smart contract to the blockchain')
+    .option('-n, --network <network>', 'Network to deploy to', 'devnet')
+    .action((options) => {
+      deploy(options);
+    });
+}
 
-// Assist command
-program
-  .command('assist [query]')
-  .description('Get AI assistance for a specific task')
-  .action(async (query) => {
-    if (!query) {
-      const response = await inquirer.prompt([
-        {
-          type: 'input',
-          name: 'query',
-          message: 'What do you need help with?'
-        }
-      ]);
-      query = response.query;
-    }
-    
-    assist(query);
-  });
+if (assist) {
+  // Assist command
+  program
+    .command('assist [query]')
+    .description('Get AI assistance for a specific task')
+    .action(async (query) => {
+      if (!query) {
+        const response = await inquirer.prompt([
+          {
+            type: 'input',
+            name: 'query',
+            message: 'What do you need help with?'
+          }
+        ]);
+        query = response.query;
+      }
+      
+      assist(query);
+    });
+}
 
-// Compile command
-program
-  .command('compile')
-  .description('Compile your smart contracts')
-  .action(() => {
-    compile();
-  });
+if (compile) {
+  // Compile command
+  program
+    .command('compile')
+    .description('Compile your smart contracts')
+    .action(() => {
+      compile();
+    });
+}
 
-// Test command
-program
-  .command('test')
-  .description('Run tests for your project')
-  .action(() => {
-    test();
-  });
+if (test) {
+  // Test command
+  program
+    .command('test')
+    .description('Run tests for your project')
+    .action(() => {
+      test();
+    });
+}
 
-// Config command
-program
-  .command('config')
-  .description('Configure your ARVIL settings')
-  .action(() => {
-    config();
-  });
+if (config) {
+  // Config command
+  program
+    .command('config')
+    .description('Configure your ARVIL settings')
+    .action(() => {
+      config();
+    });
+}
 
 // Parse arguments
 program.parse(process.argv);

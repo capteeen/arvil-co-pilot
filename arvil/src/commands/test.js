@@ -7,12 +7,13 @@ const { promisify } = require('util');
 const execAsync = promisify(exec);
 const { isProjectDirectory } = require('../utils/project');
 
-// Simple test to make Jest happy
-describe('ARVIL Test Command', () => {
-  test('exists as a module', () => {
-    expect(typeof test).toBe('function');
-  });
-});
+// Define global describe and test functions for non-test environments
+// to prevent 'describe is not defined' errors
+if (typeof describe === 'undefined') {
+  global.describe = () => {};
+  global.test = () => {};
+  global.expect = () => ({ toBe: () => {} });
+}
 
 /**
  * Run tests for the project

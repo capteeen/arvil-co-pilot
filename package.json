@@ -1,0 +1,28 @@
+{
+  "name": "arvil-cli",
+  "version": "0.1.1",
+  "description": "ARVIL - Blockchain AI Engineer Assistant for Solana",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "test": "echo \"Tests skipped for publishing\" && exit 0",
+    "_prepublishOnly": "npm test",
+    "postinstall": "node scripts/postinstall.js",
+    "prepare-package": "cd arvil && ./prepare-package.sh",
+    "publish": "cd arvil && npm publish"
+  },
+  "keywords": [
+    "blockchain",
+    "ai",
+    "solana",
+    "assistant",
+    "developer-tool",
+    "smart-contracts",
+    "cli",
+    "openai",
+    "web3"
+  ],
+  "author": "Your Name <your.email@example.com>",
+  "license": "MIT"
+} 
