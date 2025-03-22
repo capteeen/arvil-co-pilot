@@ -143,6 +143,10 @@ function extractCodeBlocks(markdown) {
  * @param {string} aiResponse - The full AI response text
  */
 async function autoProcessCodeBlocks(codeBlocks, aiResponse) {
+  // Track if any errors occurred during processing
+  let errorsOccurred = false;
+  let errorMessages = [];
+  
   // First, create all identified files from the codeblocks
   const fileBlocks = codeBlocks.filter(block => 
     !['bash', 'shell', 'sh', ''].includes(block.language));
@@ -207,7 +211,12 @@ async function autoProcessCodeBlocks(codeBlocks, aiResponse) {
         }
       }
       
-      await createFile(filename, block.code);
+      try {
+        await createFile(filename, block.code);
+      } catch (error) {
+        errorsOccurred = true;
+        errorMessages.push(`Error creating file ${filename}: ${error.message}`);
+      }
     }
   }
   
@@ -227,8 +236,23 @@ async function autoProcessCodeBlocks(codeBlocks, aiResponse) {
         continue;
       }
       
-      await executeCommand(block.code);
+      const result = await executeCommand(block.code);
+      if (!result.success) {
+        errorsOccurred = true;
+        errorMessages.push(`Command failed: ${block.code}`);
+      }
     }
+  }
+  
+  // If errors occurred during processing, attempt to resolve them
+  if (errorsOccurred) {
+    console.log(chalk.yellow('\nErrors occurred during execution. Attempting to resolve...'));
+    for (const errorMsg of errorMessages) {
+      console.log(chalk.red(`- ${errorMsg}`));
+    }
+    
+    // Use AI to suggest fixes for the errors
+    await attemptErrorResolution('auto-process', errorMessages.join('\n'));
   }
 }
 
@@ -282,13 +306,98 @@ async function executeCommand(command) {
     if (stderr) {
       console.log(chalk.yellow('\nWarnings/Errors:'));
       console.log(stderr);
+      
+      // Check if error is serious enough to attempt resolution
+      if (stderr.includes('Error:') || stderr.includes('error:') || stderr.includes('fatal:')) {
+        await attemptErrorResolution(command, stderr);
+      }
     }
     
-    return { success: true, output: stdout };
+    return { success: true, output: stdout, error: stderr };
   } catch (error) {
     spinner.fail('Command failed');
     console.error(chalk.red(`Error: ${error.message}`));
+    
+    // Attempt to resolve the error
+    await attemptErrorResolution(command, error.message);
+    
     return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Attempt to automatically resolve an error
+ * @param {string} failedCommand - The command that failed
+ * @param {string} errorMessage - The error message
+ */
+async function attemptErrorResolution(failedCommand, errorMessage) {
+  console.log(chalk.cyan('\nAttempting to fix the error automatically...'));
+  
+  // Prepare the context for the AI
+  const context = {
+    command: failedCommand,
+    error: errorMessage,
+    // Add current directory and environment
+    currentDir: process.cwd()
+  };
+  
+  // Send request to OpenAI for error resolution
+  try {
+    if (!openai) {
+      if (!openaiModule) {
+        const { OpenAI } = require('openai');
+        openaiModule = OpenAI;
+      }
+      openai = new openaiModule({
+        apiKey: process.env.OPENAI_API_KEY
+      });
+    }
+    
+    const spinner = ora('Analyzing error...').start();
+    
+    // Generate a solution for the error
+    const response = await openai.chat.completions.create({
+      model: "gpt-4-turbo",
+      messages: [
+        { 
+          role: "system", 
+          content: "You are an expert error resolver for command-line operations and code. Analyze errors and provide practical, immediate solutions. Output code blocks or commands that should be executed to fix the problem. Be direct and concise. Focus on common development errors including package installation issues, configuration problems, missing dependencies, syntax errors, etc. Provide solutions that can be automatically executed."
+        },
+        { 
+          role: "user", 
+          content: `I encountered an error while executing this command: "${failedCommand}"\n\nError message:\n${errorMessage}\n\nCurrent directory: ${context.currentDir}\n\nPlease provide a solution that can be automatically applied.` 
+        }
+      ],
+      temperature: 0.3,
+      max_tokens: 1000
+    });
+    
+    const solution = response.choices[0].message.content;
+    spinner.succeed('Solution found');
+    
+    console.log(chalk.cyan('\nProposed solution:'));
+    console.log(solution);
+    
+    // Extract code blocks or commands
+    const fixCodeBlocks = extractCodeBlocks(solution);
+    
+    if (fixCodeBlocks.length > 0) {
+      console.log(chalk.cyan('\nApplying fixes automatically...'));
+      
+      // Automatically apply fixes
+      await autoProcessCodeBlocks(fixCodeBlocks, solution);
+      
+      // If we originally failed on installing dependencies, try again
+      if (failedCommand.includes('npm install') || failedCommand.includes('yarn add')) {
+        console.log(chalk.cyan('\nRetrying original installation command...'));
+        await executeCommand(failedCommand);
+      }
+    } else {
+      console.log(chalk.yellow('\nNo specific commands or files to fix were found in the solution.'));
+    }
+    
+  } catch (error) {
+    console.error(chalk.red(`Error while attempting resolution: ${error.message}`));
   }
 }
 

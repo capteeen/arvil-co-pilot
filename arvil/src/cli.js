@@ -13,7 +13,7 @@ const dotenv = require('dotenv');
 dotenv.config();
 
 // Version
-const VERSION = '0.1.6';
+const VERSION = '0.1.7';
 
 // Add error handling to prevent crashes
 process.on('uncaughtException', (error) => {

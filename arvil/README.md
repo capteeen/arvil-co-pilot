@@ -92,4 +92,30 @@ arvil assist "Create a simple SPL token on Solana"
 # 1. Create necessary files (like .env and createToken.js)
 # 2. Execute safe terminal commands (like npm install commands)
 # 3. Skip potentially unsafe commands that require manual review
-``` 
+```
+
+## New Features in v0.1.7
+
+ARVIL now includes smart error resolution:
+
+- **Automatic Error Detection**: ARVIL detects errors during command execution and file creation
+- **AI-Powered Error Analysis**: Analyzes error messages to determine the root cause
+- **Automatic Resolution**: Applies fixes automatically without user intervention
+- **Command Retry**: After fixing issues, automatically retries failed commands
+
+### Example Error Resolution
+
+```bash
+# If a command fails with an error:
+arvil assist "Create a React dApp that connects to Solana"
+
+# ARVIL will:
+# 1. Detect the error automatically
+# 2. Use AI to analyze the error and determine a solution
+# 3. Apply necessary fixes (install missing dependencies, fix config issues)
+# 4. Retry the original command if appropriate
+```
+
+## Features in v0.1.6
+
+ARVIL operates like a Cursor Agent: 
