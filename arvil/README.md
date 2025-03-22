@@ -72,3 +72,24 @@ For detailed documentation, see:
 ## License
 
 MIT 
+
+## New Features in v0.1.5
+
+ARVIL can now help you implement solutions by:
+
+- **Automatic Code Block Detection**: ARVIL detects code blocks in AI responses
+- **Execute Terminal Commands**: Run commands directly from AI suggestions
+- **Create Files and Directories**: Generate files from code snippets
+- **Track Created Files**: Keep a record of files created during your session
+
+### Example Usage
+
+```bash
+# Get assistance with creating a Solana token
+arvil assist "Create a simple SPL token on Solana"
+
+# After the AI responds, you'll be prompted to:
+# 1. Execute terminal commands (like installing dependencies)
+# 2. Create files (like creating the token script)
+# 3. Show a list of files created during your session
+``` 
