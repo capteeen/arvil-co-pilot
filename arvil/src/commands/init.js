@@ -3,6 +3,7 @@ const path = require('path');
 const chalk = require('chalk');
 const ora = require('ora');
 const inquirer = require('inquirer');
+const { registerProject } = require('../utils/project');
 
 /**
  * Initialize a new blockchain project
@@ -184,6 +185,11 @@ describe('Sample Test', () => {
     
     spinner.succeed(`Project ${projectName} created successfully!`);
     
+    // After project creation is successful, register it in ARVIL's project registry
+    registerProject(projectName, projectPath, 'solana');
+    
+    console.log(chalk.green(`\n✅ Project registered with ARVIL. You can now use ARVIL commands in this project.`));
+    
     console.log('\n' + chalk.green('Next steps:'));
     console.log(chalk.cyan(`  cd ${projectName}`));
     console.log(chalk.cyan('  npm install'));
@@ -195,4 +201,4 @@ describe('Sample Test', () => {
   }
 }
 
-module.exports = init; 
+module.exports = init;

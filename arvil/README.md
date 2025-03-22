@@ -140,4 +140,28 @@ arvil assist "Create a Solana wallet and token"
 # 2. Securely prompt you for the information in the terminal
 # 3. Save the information to your .env file automatically
 # 4. Use the provided values in generated files and commands
+```
+
+## New Features in v0.1.9
+
+ARVIL now intelligently manages project paths:
+
+- **Project Registry**: Automatically keeps track of created projects and their locations
+- **Path Awareness**: Understands project boundaries to prevent file creation mixups
+- **Context-Aware File Creation**: Creates files in the correct locations relative to the project root
+- **Project Detection**: Warns when running commands outside of a project directory
+
+### Example Project Awareness
+
+```bash
+# ARVIL now recognizes when you're working in a project
+arvil assist "Create a new Solana program"
+
+# You'll see:
+# Working in project: my-blockchain-project (solana)
+
+# ARVIL will:
+# 1. Create files in the correct project directories
+# 2. Maintain project boundaries to prevent path mixups
+# 3. Track project usage for better context awareness
 ``` 

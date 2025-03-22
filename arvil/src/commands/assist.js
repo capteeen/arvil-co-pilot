@@ -6,7 +6,7 @@ const inquirer = require('inquirer');
 const { exec } = require('child_process');
 const { promisify } = require('util');
 const execAsync = promisify(exec);
-const { getProjectInfo } = require('../utils/project');
+const { getProjectInfo, getCurrentProject, isInProject, updateProjectTimestamp } = require('../utils/project');
 
 // Lazy load OpenAI to avoid startup errors
 let openaiModule = null;
@@ -23,6 +23,26 @@ const AUTO_EXECUTE = true; // Set to true to auto-execute without prompting
  * @param {string} query - The query to get assistance for
  */
 async function assist(query) {
+  // Check if in a project directory
+  let projectInfo = null;
+  let projectWarningShown = false;
+  
+  try {
+    if (isInProject()) {
+      projectInfo = getProjectInfo();
+      console.log(chalk.green(`Working in project: ${projectInfo.name} (${projectInfo.type})`));
+      
+      // Update project timestamp to mark it as recently used
+      updateProjectTimestamp(projectInfo.path);
+    } else {
+      console.log(chalk.yellow('Warning: Not in an ARVIL project directory. Some features may not work properly.'));
+      console.log(chalk.yellow('Tip: Run `arvil init my-project` to create a new project first.'));
+      projectWarningShown = true;
+    }
+  } catch (error) {
+    // Silently continue if project detection fails
+  }
+  
   // Check if OpenAI API key is set
   if (!process.env.OPENAI_API_KEY) {
     console.log(chalk.red('Error: OPENAI_API_KEY is not set.'));
@@ -96,10 +116,10 @@ async function assist(query) {
     if (codeBlocks.length > 0) {
       if (AUTO_EXECUTE) {
         // Automatically process code blocks without prompting
-        await autoProcessCodeBlocks(codeBlocks, aiResponse);
+        await autoProcessCodeBlocks(codeBlocks, aiResponse, projectInfo);
       } else {
         // Use the interactive mode if AUTO_EXECUTE is false
-        await handleCodeBlocks(codeBlocks);
+        await handleCodeBlocks(codeBlocks, projectInfo);
       }
     }
     
@@ -141,8 +161,9 @@ function extractCodeBlocks(markdown) {
  * Automatically process code blocks without prompting
  * @param {Array} codeBlocks - Array of code blocks to process
  * @param {string} aiResponse - The full AI response text
+ * @param {Object|null} projectInfo - Project information if in a project
  */
-async function autoProcessCodeBlocks(codeBlocks, aiResponse) {
+async function autoProcessCodeBlocks(codeBlocks, aiResponse, projectInfo = null) {
   // Track if any errors occurred during processing
   let errorsOccurred = false;
   let errorMessages = [];
@@ -211,6 +232,29 @@ async function autoProcessCodeBlocks(codeBlocks, aiResponse) {
             break;
           default:
             filename = `file${i+1}.${block.language || 'txt'}`;
+        }
+      }
+      
+      // Add path awareness - ensure files are created in the right location
+      // If we're in a project, make sure paths are relative to the project
+      if (projectInfo && !filename.startsWith('/')) {
+        // If the path is not absolute, make it relative to the project
+        if (!path.isAbsolute(filename)) {
+          // Check if we're trying to create a file outside the current dir
+          if (filename.startsWith('..')) {
+            console.log(chalk.yellow(`Warning: Attempting to create file outside current directory: ${filename}`));
+            console.log(chalk.yellow(`Creating in current directory instead.`));
+            filename = path.basename(filename);
+          }
+          
+          // If we're not in the project root, adjust the path
+          if (process.cwd() !== projectInfo.path) {
+            const relativeToProject = path.relative(projectInfo.path, process.cwd());
+            // Only prepend if we're in a subdirectory of the project
+            if (!relativeToProject.startsWith('..')) {
+              filename = path.join(relativeToProject, filename);
+            }
+          }
         }
       }
       
@@ -597,8 +641,9 @@ async function attemptErrorResolution(failedCommand, errorMessage) {
 /**
  * Handle extracted code blocks (interactive mode)
  * @param {Array} codeBlocks - Array of code blocks to handle
+ * @param {Object|null} projectInfo - Project information if in a project
  */
-async function handleCodeBlocks(codeBlocks) {
+async function handleCodeBlocks(codeBlocks, projectInfo = null) {
   console.log(chalk.yellow('\nDetected code blocks in the response. Would you like to:'));
   console.log(chalk.cyan('1. Execute terminal commands'));
   console.log(chalk.cyan('2. Create files'));
