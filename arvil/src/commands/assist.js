@@ -147,6 +147,9 @@ async function autoProcessCodeBlocks(codeBlocks, aiResponse) {
   let errorsOccurred = false;
   let errorMessages = [];
   
+  // First, scan for placeholders that need user input
+  const placeholderValues = await detectAndPromptForPlaceholders(aiResponse, codeBlocks);
+  
   // First, create all identified files from the codeblocks
   const fileBlocks = codeBlocks.filter(block => 
     !['bash', 'shell', 'sh', ''].includes(block.language));
@@ -211,8 +214,11 @@ async function autoProcessCodeBlocks(codeBlocks, aiResponse) {
         }
       }
       
+      // Replace placeholders in the code with user-provided values
+      let codeWithReplacements = replacePlaceholders(block.code, placeholderValues);
+      
       try {
-        await createFile(filename, block.code);
+        await createFile(filename, codeWithReplacements);
       } catch (error) {
         errorsOccurred = true;
         errorMessages.push(`Error creating file ${filename}: ${error.message}`);
@@ -230,16 +236,25 @@ async function autoProcessCodeBlocks(codeBlocks, aiResponse) {
     for (const block of commandBlocks) {
       // Skip commands that might be unsafe or are just examples
       if (block.code.includes('sudo ') || 
-          block.code.includes('rm -rf') || 
-          block.code.includes('[YourPrivateKeyArray]')) {
+          block.code.includes('rm -rf')) {
         console.log(chalk.yellow(`Skipping potentially unsafe command: ${block.code.substring(0, 50)}...`));
         continue;
       }
       
-      const result = await executeCommand(block.code);
+      // Replace placeholders with user input
+      const commandWithReplacements = replacePlaceholders(block.code, placeholderValues);
+      
+      // Skip example commands that haven't been properly filled in
+      if (commandWithReplacements.includes('[YourPrivateKey') || 
+          commandWithReplacements.includes('your_actual_private_key_here')) {
+        console.log(chalk.yellow(`Skipping example command: ${commandWithReplacements.substring(0, 50)}...`));
+        continue;
+      }
+      
+      const result = await executeCommand(commandWithReplacements);
       if (!result.success) {
         errorsOccurred = true;
-        errorMessages.push(`Command failed: ${block.code}`);
+        errorMessages.push(`Command failed: ${commandWithReplacements}`);
       }
     }
   }
@@ -254,6 +269,184 @@ async function autoProcessCodeBlocks(codeBlocks, aiResponse) {
     // Use AI to suggest fixes for the errors
     await attemptErrorResolution('auto-process', errorMessages.join('\n'));
   }
+}
+
+/**
+ * Detect placeholders in the AI response and prompt the user for values
+ * @param {string} aiResponse - The full AI response
+ * @param {Array} codeBlocks - The extracted code blocks
+ * @returns {Object} - A map of placeholders to their user-provided values
+ */
+async function detectAndPromptForPlaceholders(aiResponse, codeBlocks) {
+  const placeholderValues = {};
+  
+  // Compile all code into a single string for easier pattern matching
+  const allCode = codeBlocks.map(block => block.code).join('\n');
+  
+  // Common patterns for placeholders that need user input
+  const patterns = [
+    // Private keys
+    { regex: /\[YourPrivateKey(?:Array)?\]/, 
+      type: 'private_key', 
+      message: 'Enter your Solana private key (array of bytes):',
+      validation: (input) => input.trim().length > 0
+    },
+    { regex: /['"]your_(?:actual_)?private_key(?:_array)?_here['"]/, 
+      type: 'private_key', 
+      message: 'Enter your Solana private key:',
+      validation: (input) => input.trim().length > 0 
+    },
+    
+    // API keys
+    { regex: /\[YourAPIKey\]/, 
+      type: 'api_key', 
+      message: 'Enter your API key:',
+      validation: (input) => input.trim().length > 0 
+    },
+    { regex: /['"]your_api_key(?:_here)?['"]/, 
+      type: 'api_key', 
+      message: 'Enter your API key:',
+      validation: (input) => input.trim().length > 0 
+    },
+    
+    // Wallet addresses
+    { regex: /\[YourWalletAddress\]/, 
+      type: 'wallet_address', 
+      message: 'Enter your wallet address:',
+      validation: (input) => input.trim().length > 0 
+    },
+    { regex: /['"]your_wallet_address(?:_here)?['"]/, 
+      type: 'wallet_address', 
+      message: 'Enter your wallet address:',
+      validation: (input) => input.trim().length > 0 
+    },
+    
+    // RPC endpoints
+    { regex: /\[YourRPCEndpoint\]/, 
+      type: 'rpc_endpoint', 
+      message: 'Enter your RPC endpoint URL:',
+      validation: (input) => input.trim().length > 0 && input.startsWith('http')
+    },
+    { regex: /['"]your_rpc_endpoint(?:_here)?['"]/, 
+      type: 'rpc_endpoint', 
+      message: 'Enter your RPC endpoint URL:',
+      validation: (input) => input.trim().length > 0 && input.startsWith('http') 
+    },
+  ];
+  
+  // Check for each pattern in the code
+  for (const pattern of patterns) {
+    if (pattern.regex.test(allCode) || pattern.regex.test(aiResponse)) {
+      // Only prompt for each type once
+      if (!placeholderValues[pattern.type]) {
+        const { value } = await inquirer.prompt([
+          {
+            type: pattern.type === 'private_key' ? 'password' : 'input',
+            name: 'value',
+            message: pattern.message,
+            validate: pattern.validation
+          }
+        ]);
+        
+        placeholderValues[pattern.type] = value;
+        
+        // Store private key in .env file for future use
+        if (pattern.type === 'private_key') {
+          await updateEnvFile('PRIVATE_KEY', value);
+          console.log(chalk.green('✓ Saved private key to .env file'));
+        }
+        
+        // Store API key in .env file
+        if (pattern.type === 'api_key') {
+          await updateEnvFile('API_KEY', value);
+          console.log(chalk.green('✓ Saved API key to .env file'));
+        }
+        
+        // Store wallet address
+        if (pattern.type === 'wallet_address') {
+          await updateEnvFile('WALLET_ADDRESS', value);
+          console.log(chalk.green('✓ Saved wallet address to .env file'));
+        }
+        
+        // Store RPC endpoint
+        if (pattern.type === 'rpc_endpoint') {
+          await updateEnvFile('RPC_ENDPOINT', value);
+          console.log(chalk.green('✓ Saved RPC endpoint to .env file'));
+        }
+      }
+    }
+  }
+  
+  return placeholderValues;
+}
+
+/**
+ * Update or create .env file with a key-value pair
+ * @param {string} key - The env variable name
+ * @param {string} value - The value to set
+ */
+async function updateEnvFile(key, value) {
+  const envPath = '.env';
+  let envContent = '';
+  
+  // Read existing .env file if it exists
+  if (fs.existsSync(envPath)) {
+    envContent = fs.readFileSync(envPath, 'utf8');
+  }
+  
+  // Check if the key already exists
+  const keyRegex = new RegExp(`^${key}=.*$`, 'm');
+  
+  if (keyRegex.test(envContent)) {
+    // Update existing key
+    envContent = envContent.replace(keyRegex, `${key}=${value}`);
+  } else {
+    // Add new key
+    envContent += `\n${key}=${value}`;
+  }
+  
+  // Write updated content back to .env file
+  fs.writeFileSync(envPath, envContent.trim(), 'utf8');
+}
+
+/**
+ * Replace placeholder patterns in code with user-provided values
+ * @param {string} code - The code block to process
+ * @param {Object} placeholderValues - Map of placeholders to values
+ * @returns {string} - Code with replacements
+ */
+function replacePlaceholders(code, placeholderValues) {
+  let result = code;
+  
+  // Replace private key placeholders
+  if (placeholderValues.private_key) {
+    result = result.replace(/\[YourPrivateKey(?:Array)?\]/g, placeholderValues.private_key);
+    result = result.replace(/['"]your_(?:actual_)?private_key(?:_array)?_here['"]/g, `"${placeholderValues.private_key}"`);
+    result = result.replace(/PRIVATE_KEY=.*$/m, `PRIVATE_KEY=${placeholderValues.private_key}`);
+  }
+  
+  // Replace API key placeholders
+  if (placeholderValues.api_key) {
+    result = result.replace(/\[YourAPIKey\]/g, placeholderValues.api_key);
+    result = result.replace(/['"]your_api_key(?:_here)?['"]/g, `"${placeholderValues.api_key}"`);
+    result = result.replace(/API_KEY=.*$/m, `API_KEY=${placeholderValues.api_key}`);
+  }
+  
+  // Replace wallet address placeholders
+  if (placeholderValues.wallet_address) {
+    result = result.replace(/\[YourWalletAddress\]/g, placeholderValues.wallet_address);
+    result = result.replace(/['"]your_wallet_address(?:_here)?['"]/g, `"${placeholderValues.wallet_address}"`);
+    result = result.replace(/WALLET_ADDRESS=.*$/m, `WALLET_ADDRESS=${placeholderValues.wallet_address}`);
+  }
+  
+  // Replace RPC endpoint placeholders
+  if (placeholderValues.rpc_endpoint) {
+    result = result.replace(/\[YourRPCEndpoint\]/g, placeholderValues.rpc_endpoint);
+    result = result.replace(/['"]your_rpc_endpoint(?:_here)?['"]/g, `"${placeholderValues.rpc_endpoint}"`);
+    result = result.replace(/RPC_ENDPOINT=.*$/m, `RPC_ENDPOINT=${placeholderValues.rpc_endpoint}`);
+  }
+  
+  return result;
 }
 
 /**

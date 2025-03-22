@@ -119,3 +119,25 @@ arvil assist "Create a React dApp that connects to Solana"
 ## Features in v0.1.6
 
 ARVIL operates like a Cursor Agent: 
+
+## New Features in v0.1.8
+
+ARVIL now intelligently handles sensitive information:
+
+- **Smart Placeholder Detection**: Automatically identifies when sensitive information like private keys is needed
+- **Interactive User Prompting**: Securely prompts for sensitive information in the terminal
+- **Automatic File Updates**: Updates configuration files with user-provided values
+- **Environment Variable Management**: Manages .env files to store sensitive information securely
+
+### Example User Prompting
+
+```bash
+# When ARVIL detects that sensitive information is needed:
+arvil assist "Create a Solana wallet and token"
+
+# ARVIL will:
+# 1. Detect placeholders for private keys, API keys, wallet addresses, etc.
+# 2. Securely prompt you for the information in the terminal
+# 3. Save the information to your .env file automatically
+# 4. Use the provided values in generated files and commands
+``` 
