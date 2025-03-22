@@ -75,12 +75,12 @@ MIT
 
 ## New Features in v0.1.5
 
-ARVIL can now help you implement solutions by:
+ARVIL now operates like a Cursor Agent:
 
-- **Automatic Code Block Detection**: ARVIL detects code blocks in AI responses
-- **Execute Terminal Commands**: Run commands directly from AI suggestions
-- **Create Files and Directories**: Generate files from code snippets
-- **Track Created Files**: Keep a record of files created during your session
+- **Automatic Code Implementation**: ARVIL automatically detects and implements code from AI responses
+- **Seamless File Creation**: Files are created instantly without prompting
+- **Command Execution**: Terminal commands are executed automatically (with safety checks)
+- **Smart Filename Detection**: Intelligently extracts filenames from AI responses
 
 ### Example Usage
 
@@ -88,8 +88,8 @@ ARVIL can now help you implement solutions by:
 # Get assistance with creating a Solana token
 arvil assist "Create a simple SPL token on Solana"
 
-# After the AI responds, you'll be prompted to:
-# 1. Execute terminal commands (like installing dependencies)
-# 2. Create files (like creating the token script)
-# 3. Show a list of files created during your session
+# ARVIL will automatically:
+# 1. Create necessary files (like .env and createToken.js)
+# 2. Execute safe terminal commands (like npm install commands)
+# 3. Skip potentially unsafe commands that require manual review
 ``` 

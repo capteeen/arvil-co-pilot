@@ -15,6 +15,9 @@ let openai = null;
 // Track created files
 const createdFiles = new Set();
 
+// Auto-execution settings
+const AUTO_EXECUTE = true; // Set to true to auto-execute without prompting
+
 /**
  * Get AI assistance for a specific task
  * @param {string} query - The query to get assistance for
@@ -74,7 +77,7 @@ async function assist(query) {
     const response = await openai.chat.completions.create({
       model: "gpt-4-turbo",
       messages: [
-        { role: "system", content: "You are ARVIL, an AI blockchain engineer assistant for Solana. You provide expert help with smart contract development, debugging, testing, and deployment. When providing code solutions, present them as executable commands (bash) and file snippets (with filenames) that the user can immediately implement. Be concise, technical, and helpful." },
+        { role: "system", content: "You are ARVIL, an AI blockchain engineer assistant for Solana. You provide expert help with smart contract development, debugging, testing, and deployment. When providing code solutions, present them as executable commands (bash) and file snippets (with specific filenames) that should be implemented. Be concise, technical, and helpful." },
         { role: "user", content: `${context}${query}` }
       ],
       temperature: 0.5,
@@ -87,11 +90,17 @@ async function assist(query) {
     
     console.log('\n' + chalk.cyan('ARVIL: ') + aiResponse + '\n');
     
-    // Extract code blocks and offer to execute them
+    // Extract code blocks and execute them
     const codeBlocks = extractCodeBlocks(aiResponse);
     
     if (codeBlocks.length > 0) {
-      await handleCodeBlocks(codeBlocks);
+      if (AUTO_EXECUTE) {
+        // Automatically process code blocks without prompting
+        await autoProcessCodeBlocks(codeBlocks, aiResponse);
+      } else {
+        // Use the interactive mode if AUTO_EXECUTE is false
+        await handleCodeBlocks(codeBlocks);
+      }
     }
     
   } catch (error) {
@@ -129,7 +138,162 @@ function extractCodeBlocks(markdown) {
 }
 
 /**
- * Handle extracted code blocks
+ * Automatically process code blocks without prompting
+ * @param {Array} codeBlocks - Array of code blocks to process
+ * @param {string} aiResponse - The full AI response text
+ */
+async function autoProcessCodeBlocks(codeBlocks, aiResponse) {
+  // First, create all identified files from the codeblocks
+  const fileBlocks = codeBlocks.filter(block => 
+    !['bash', 'shell', 'sh', ''].includes(block.language));
+  
+  // Extract potential filenames from the response
+  const filenameMatcher = /file[s]? (?:named|called) [`"]?([a-zA-Z0-9._\-/]+)[`"]?/gi;
+  const createMatcher = /[Cc]reate (?:a|the) [`"]?([a-zA-Z0-9._\-/]+)[`"]? file/gi;
+  
+  // Extract filenames from the AI response text
+  let filenameMatches = [];
+  let match;
+  
+  while ((match = filenameMatcher.exec(aiResponse)) !== null) {
+    filenameMatches.push(match[1]);
+  }
+  
+  while ((match = createMatcher.exec(aiResponse)) !== null) {
+    filenameMatches.push(match[1]);
+  }
+  
+  // Create files with detected filenames
+  if (fileBlocks.length > 0) {
+    console.log(chalk.cyan('\nCreating files automatically:'));
+    
+    for (let i = 0; i < fileBlocks.length; i++) {
+      const block = fileBlocks[i];
+      
+      // Determine filename based on language if not explicitly mentioned
+      let filename = '';
+      
+      // First, check if a filename was mentioned in the text
+      if (i < filenameMatches.length) {
+        filename = filenameMatches[i];
+      } else {
+        // Fallback to language-based naming
+        switch (block.language) {
+          case 'javascript':
+          case 'js':
+            filename = `script${i+1}.js`;
+            break;
+          case 'typescript':
+          case 'ts':
+            filename = `script${i+1}.ts`;
+            break;
+          case 'rust':
+          case 'rs':
+            filename = `program${i+1}.rs`;
+            break;
+          case 'solidity':
+          case 'sol':
+            filename = `contract${i+1}.sol`;
+            break;
+          case 'plaintext':
+            if (block.code.startsWith('PRIVATE_KEY=') || block.code.includes('=')) {
+              filename = '.env';
+            } else {
+              filename = `file${i+1}.txt`;
+            }
+            break;
+          default:
+            filename = `file${i+1}.${block.language || 'txt'}`;
+        }
+      }
+      
+      await createFile(filename, block.code);
+    }
+  }
+  
+  // Then execute terminal commands
+  const commandBlocks = codeBlocks.filter(block => 
+    ['bash', 'shell', 'sh', ''].includes(block.language));
+  
+  if (commandBlocks.length > 0) {
+    console.log(chalk.cyan('\nExecuting commands automatically:'));
+    
+    for (const block of commandBlocks) {
+      // Skip commands that might be unsafe or are just examples
+      if (block.code.includes('sudo ') || 
+          block.code.includes('rm -rf') || 
+          block.code.includes('[YourPrivateKeyArray]')) {
+        console.log(chalk.yellow(`Skipping potentially unsafe command: ${block.code.substring(0, 50)}...`));
+        continue;
+      }
+      
+      await executeCommand(block.code);
+    }
+  }
+}
+
+/**
+ * Create a file with the given name and content
+ * @param {string} filename - The name of the file to create
+ * @param {string} content - The content to write to the file
+ */
+async function createFile(filename, content) {
+  try {
+    // Create containing directories if they don't exist
+    const dirname = path.dirname(filename);
+    if (dirname !== '.') {
+      fs.mkdirpSync(dirname);
+    }
+    
+    // Write the file
+    fs.writeFileSync(filename, content);
+    console.log(chalk.green(`✓ Created file: ${filename}`));
+    
+    // Add to tracked files
+    createdFiles.add(filename);
+    
+    // Make executable if it's a script
+    if (filename.endsWith('.sh') || filename.endsWith('.js')) {
+      fs.chmodSync(filename, '755');
+      console.log(chalk.green(`  Made ${filename} executable`));
+    }
+  } catch (error) {
+    console.error(chalk.red(`Error creating file: ${error.message}`));
+  }
+}
+
+/**
+ * Execute a command in the terminal
+ * @param {string} command - The command to execute
+ */
+async function executeCommand(command) {
+  console.log(chalk.cyan(`$ ${command}`));
+  const spinner = ora('Running command').start();
+  
+  try {
+    const { stdout, stderr } = await execAsync(command);
+    spinner.succeed('Command executed');
+    
+    if (stdout) {
+      console.log(chalk.green('\nOutput:'));
+      console.log(stdout);
+    }
+    
+    if (stderr) {
+      console.log(chalk.yellow('\nWarnings/Errors:'));
+      console.log(stderr);
+    }
+    
+    return { success: true, output: stdout };
+  } catch (error) {
+    spinner.fail('Command failed');
+    console.error(chalk.red(`Error: ${error.message}`));
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Handle extracted code blocks (interactive mode)
  * @param {Array} codeBlocks - Array of code blocks to handle
  */
 async function handleCodeBlocks(codeBlocks) {
@@ -228,26 +392,7 @@ async function executeCommands(codeBlocks) {
   }
   
   // Execute the command
-  console.log(chalk.cyan('\nExecuting command...'));
-  const spinner = ora('Running command').start();
-  
-  try {
-    const { stdout, stderr } = await execAsync(selectedCommand);
-    spinner.succeed('Command executed');
-    
-    if (stdout) {
-      console.log(chalk.green('\nOutput:'));
-      console.log(stdout);
-    }
-    
-    if (stderr) {
-      console.log(chalk.yellow('\nWarnings/Errors:'));
-      console.log(stderr);
-    }
-  } catch (error) {
-    spinner.fail('Command failed');
-    console.error(chalk.red(`Error: ${error.message}`));
-  }
+  await executeCommand(selectedCommand);
 }
 
 /**
@@ -301,28 +446,7 @@ async function createFiles(codeBlocks) {
     }
   ]);
   
-  // Create containing directories if they don't exist
-  const dirname = path.dirname(filename);
-  if (dirname !== '.') {
-    fs.mkdirpSync(dirname);
-  }
-  
-  // Write the file
-  try {
-    fs.writeFileSync(filename, fileBlocks[fileIndex].code);
-    console.log(chalk.green(`\nFile created: ${filename}`));
-    
-    // Add to tracked files
-    createdFiles.add(filename);
-    
-    // Make executable if it's a script
-    if (filename.endsWith('.sh') || filename.endsWith('.js')) {
-      fs.chmodSync(filename, '755');
-      console.log(chalk.green(`Made ${filename} executable`));
-    }
-  } catch (error) {
-    console.error(chalk.red(`Error creating file: ${error.message}`));
-  }
+  await createFile(filename, fileBlocks[fileIndex].code);
 }
 
 /**
