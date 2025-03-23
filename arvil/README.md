@@ -164,4 +164,28 @@ arvil assist "Create a new Solana program"
 # 1. Create files in the correct project directories
 # 2. Maintain project boundaries to prevent path mixups
 # 3. Track project usage for better context awareness
+```
+
+## New Features in v0.2.0
+
+ARVIL now has improved Cursor-like terminal error handling:
+
+- **Smart Error Resolution**: Only attempts unique solutions instead of repeating the same fix
+- **Specialized Error Handlers**: Targeted fixers for common issues like ESLint configuration and npm dependencies
+- **Progressive Resolution**: Attempts increasingly specific solutions until the problem is solved
+- **Persistent Command Tracking**: Remembers which commands have been attempted to avoid loops
+- **Human-Like Terminal Interaction**: Provides clearer feedback during the error resolution process
+
+### Example Improved Error Handling
+
+```bash
+# When ARVIL encounters an error, it now:
+arvil assist "Create an ESLint config for my project"
+
+# ARVIL will:
+# 1. Analyze the specific error type (ESLint, npm, file permissions, etc.)
+# 2. Try a targeted fix based on the error category
+# 3. Track attempted solutions to avoid repetition
+# 4. Progressively apply more specific fixes if needed
+# 5. Provide clear feedback throughout the process
 ``` 

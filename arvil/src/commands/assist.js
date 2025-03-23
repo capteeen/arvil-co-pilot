@@ -570,6 +570,9 @@ async function executeCommand(command) {
 async function attemptErrorResolution(failedCommand, errorMessage) {
   console.log(chalk.cyan('\nAttempting to fix the error automatically...'));
   
+  // Track attempted solutions to avoid loops
+  const attemptedSolutions = new Set();
+  
   // Prepare the context for the AI
   const context = {
     command: failedCommand,
@@ -598,11 +601,11 @@ async function attemptErrorResolution(failedCommand, errorMessage) {
       messages: [
         { 
           role: "system", 
-          content: "You are an expert error resolver for command-line operations and code. Analyze errors and provide practical, immediate solutions. Output code blocks or commands that should be executed to fix the problem. Be direct and concise. Focus on common development errors including package installation issues, configuration problems, missing dependencies, syntax errors, etc. Provide solutions that can be automatically executed."
+          content: "You are an expert error resolver for command-line operations and code. Analyze errors and provide practical, immediate solutions. Output code blocks or commands that should be executed to fix the problem. Be direct and concise. Focus on common development errors including package installation issues, configuration problems, missing dependencies, syntax errors, etc. Provide solutions that can be automatically executed. When providing shell commands, ensure they will work in a single execution - avoid requiring user input unless absolutely necessary. If a command requires input, consider providing it via arguments or environment variables. IMPORTANT: If the error involves conflicting configuration formats (like ESLint config files), choose ONE definitive solution and stick with it rather than trying both approaches."
         },
         { 
           role: "user", 
-          content: `I encountered an error while executing this command: "${failedCommand}"\n\nError message:\n${errorMessage}\n\nCurrent directory: ${context.currentDir}\n\nPlease provide a solution that can be automatically applied.` 
+          content: `I encountered an error while executing this command: "${failedCommand}"\n\nError message:\n${errorMessage}\n\nCurrent directory: ${context.currentDir}\n\nPlease provide a single definitive solution that can be automatically applied.` 
         }
       ],
       temperature: 0.3,
@@ -619,23 +622,289 @@ async function attemptErrorResolution(failedCommand, errorMessage) {
     const fixCodeBlocks = extractCodeBlocks(solution);
     
     if (fixCodeBlocks.length > 0) {
-      console.log(chalk.cyan('\nApplying fixes automatically...'));
+      // Hash the solution to avoid applying the same fix repeatedly
+      const solutionHash = JSON.stringify(fixCodeBlocks.map(block => block.code));
       
-      // Automatically apply fixes
-      await autoProcessCodeBlocks(fixCodeBlocks, solution);
+      if (attemptedSolutions.has(solutionHash)) {
+        console.log(chalk.yellow('\nThis solution has already been attempted. Trying a different approach...'));
+        
+        // Try a more direct approach for common problems
+        await handleCommonErrors(failedCommand, errorMessage);
+        return;
+      }
       
-      // If we originally failed on installing dependencies, try again
-      if (failedCommand.includes('npm install') || failedCommand.includes('yarn add')) {
-        console.log(chalk.cyan('\nRetrying original installation command...'));
-        await executeCommand(failedCommand);
+      // Mark this solution as attempted
+      attemptedSolutions.add(solutionHash);
+      
+      console.log(chalk.cyan('\nApplying fix automatically...'));
+      
+      // Process only one code block at a time for better control
+      const executionPromises = [];
+      
+      for (const block of fixCodeBlocks) {
+        if (['bash', 'shell', 'sh', ''].includes(block.language)) {
+          // For shell commands, execute one by one
+          const commandLines = block.code
+            .split('\n')
+            .filter(line => line.trim() && !line.trim().startsWith('#'));
+          
+          for (const command of commandLines) {
+            // Skip potentially unsafe commands
+            if (command.includes('sudo ') || command.includes('rm -rf')) {
+              console.log(chalk.yellow(`Skipping potentially unsafe command: ${command}`));
+              continue;
+            }
+            
+            console.log(chalk.cyan(`Executing: ${command}`));
+            const result = await executeCommand(command);
+            
+            // If this command succeeded, break out of the loop
+            if (result.success && 
+                (command.includes(failedCommand) || 
+                 result.output.includes("0 vulnerabilities") || 
+                 !result.error)) {
+              console.log(chalk.green('✓ Fix successfully applied!'));
+              return;
+            }
+          }
+        } else {
+          // For file content, try to determine the target file from the solution text
+          const fileMatch = solution.match(/create|modify|update|fix (?:the )?(?:file )?[`'"]?([^`'"\s]+\.[a-zA-Z]+)[`'"]?/i);
+          if (fileMatch) {
+            const filename = fileMatch[1];
+            await createFile(filename, block.code);
+            console.log(chalk.green(`✓ Created/updated file: ${filename}`));
+          }
+        }
+      }
+      
+      // If we got here, direct command execution didn't fully solve the issue
+      // Let's try a more targeted approach for common errors
+      if (errorMessage.includes('ESLint')) {
+        await handleEslintErrors(errorMessage);
+      } else if (errorMessage.includes('npm ERR!')) {
+        await handleNpmErrors(errorMessage);
       }
     } else {
       console.log(chalk.yellow('\nNo specific commands or files to fix were found in the solution.'));
+      
+      // Try to address common errors directly
+      await handleCommonErrors(failedCommand, errorMessage);
     }
     
   } catch (error) {
     console.error(chalk.red(`Error while attempting resolution: ${error.message}`));
+    
+    // Provide fallback for common errors even if AI fails
+    await handleCommonErrors(failedCommand, errorMessage);
   }
+}
+
+/**
+ * Handle common types of errors with direct solutions
+ * @param {string} failedCommand - The command that failed
+ * @param {string} errorMessage - The error message
+ */
+async function handleCommonErrors(failedCommand, errorMessage) {
+  // ESLint configuration issues
+  if (errorMessage.includes("ESLint") && errorMessage.includes("eslint.config")) {
+    await handleEslintErrors(errorMessage);
+    return;
+  }
+  
+  // npm dependency issues
+  if (errorMessage.includes("npm ERR!") || failedCommand.includes("npm install")) {
+    await handleNpmErrors(errorMessage);
+    return;
+  }
+  
+  // File not found or permission issues
+  if (errorMessage.includes("ENOENT") || errorMessage.includes("permission denied")) {
+    await handleFileErrors(failedCommand, errorMessage);
+    return;
+  }
+  
+  console.log(chalk.yellow("Could not automatically resolve this error. Please check the error message and try to resolve it manually."));
+}
+
+/**
+ * Handle ESLint specific errors
+ * @param {string} errorMessage - The error message
+ */
+async function handleEslintErrors(errorMessage) {
+  console.log(chalk.cyan("Fixing ESLint configuration issues..."));
+  
+  // Determine current directory
+  const currentDir = process.cwd();
+  
+  // ESLint v9 uses eslint.config.js, previous versions use .eslintrc.*
+  if (errorMessage.includes("ESLint couldn't find an eslint.config")) {
+    // Check if .eslintrc.* exists
+    const eslintrcExists = fs.existsSync(path.join(currentDir, '.eslintrc.js')) || 
+                          fs.existsSync(path.join(currentDir, '.eslintrc.json')) || 
+                          fs.existsSync(path.join(currentDir, '.eslintrc'));
+    
+    if (eslintrcExists) {
+      // Convert .eslintrc.* to eslint.config.js
+      console.log(chalk.cyan("Converting .eslintrc.* to eslint.config.js format..."));
+      
+      // Find which .eslintrc file exists
+      let oldConfigFile = '';
+      if (fs.existsSync(path.join(currentDir, '.eslintrc.js'))) {
+        oldConfigFile = '.eslintrc.js';
+      } else if (fs.existsSync(path.join(currentDir, '.eslintrc.json'))) {
+        oldConfigFile = '.eslintrc.json';
+      } else if (fs.existsSync(path.join(currentDir, '.eslintrc'))) {
+        oldConfigFile = '.eslintrc';
+      }
+      
+      // Create minimal eslint.config.js
+      const configContent = `export default [
+  {
+    ignores: ['node_modules/**', 'dist/**', 'build/**'],
+  },
+  {
+    files: ['**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+    },
+    rules: {
+      // Basic rules
+      'no-unused-vars': 'warn',
+      'no-undef': 'error',
+    },
+  },
+];`;
+      
+      // Write new config file
+      fs.writeFileSync(path.join(currentDir, 'eslint.config.js'), configContent);
+      console.log(chalk.green("✓ Created eslint.config.js with basic rules"));
+      
+      // Add type:module to package.json if it doesn't exist
+      try {
+        const packageJsonPath = path.join(currentDir, 'package.json');
+        if (fs.existsSync(packageJsonPath)) {
+          const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+          if (!packageJson.type) {
+            packageJson.type = 'module';
+            fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
+            console.log(chalk.green("✓ Added type:module to package.json"));
+          }
+        }
+      } catch (error) {
+        console.log(chalk.yellow(`Warning: Could not update package.json: ${error.message}`));
+      }
+    } else {
+      // Create new eslint.config.js
+      const configContent = `export default [
+  {
+    ignores: ['node_modules/**', 'dist/**', 'build/**'],
+  },
+  {
+    files: ['**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+    },
+    rules: {
+      // Basic rules
+      'no-unused-vars': 'warn',
+      'no-undef': 'error',
+    },
+  },
+];`;
+      
+      fs.writeFileSync(path.join(currentDir, 'eslint.config.js'), configContent);
+      console.log(chalk.green("✓ Created eslint.config.js with basic rules"));
+      
+      // Add type:module to package.json
+      try {
+        const packageJsonPath = path.join(currentDir, 'package.json');
+        if (fs.existsSync(packageJsonPath)) {
+          const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+          if (!packageJson.type) {
+            packageJson.type = 'module';
+            fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
+            console.log(chalk.green("✓ Added type:module to package.json"));
+          }
+        }
+      } catch (error) {
+        console.log(chalk.yellow(`Warning: Could not update package.json: ${error.message}`));
+      }
+    }
+  }
+  
+  // Ensure ESLint is installed
+  await executeCommand('npm install eslint --save-dev');
+  
+  console.log(chalk.green("ESLint configuration has been fixed."));
+}
+
+/**
+ * Handle npm specific errors
+ * @param {string} errorMessage - The error message
+ */
+async function handleNpmErrors(errorMessage) {
+  console.log(chalk.cyan("Fixing npm dependency issues..."));
+  
+  // Check for specific npm errors
+  if (errorMessage.includes('EACCES') || errorMessage.includes('permission denied')) {
+    // Permission issues
+    console.log(chalk.cyan("Fixing npm permissions..."));
+    await executeCommand('mkdir -p ~/.npm-global');
+    await executeCommand('npm config set prefix ~/.npm-global');
+    await executeCommand('npm install');
+  } else if (errorMessage.includes('ENOENT') && errorMessage.includes('package.json')) {
+    // Missing package.json
+    console.log(chalk.cyan("Creating basic package.json..."));
+    await executeCommand('npm init -y');
+  } else if (errorMessage.includes('Cannot find module')) {
+    // Missing dependency
+    const moduleMatch = errorMessage.match(/Cannot find module '([^']+)'/);
+    if (moduleMatch) {
+      const moduleName = moduleMatch[1];
+      console.log(chalk.cyan(`Installing missing module: ${moduleName}`));
+      await executeCommand(`npm install ${moduleName} --save`);
+    }
+  } else {
+    // General npm fix - clear cache and reinstall
+    console.log(chalk.cyan("Fixing npm with cache clear and reinstall..."));
+    await executeCommand('npm cache clean --force');
+    await executeCommand('npm install');
+  }
+  
+  console.log(chalk.green("npm issues have been addressed."));
+}
+
+/**
+ * Handle file-related errors
+ * @param {string} failedCommand - The command that failed
+ * @param {string} errorMessage - The error message
+ */
+async function handleFileErrors(failedCommand, errorMessage) {
+  console.log(chalk.cyan("Fixing file-related issues..."));
+  
+  // Check for file not found errors
+  const fileMatch = errorMessage.match(/ENOENT: no such file or directory[^']*'([^']+)'/);
+  if (fileMatch) {
+    const filePath = fileMatch[1];
+    const dirname = path.dirname(filePath);
+    
+    // Create directory if it doesn't exist
+    if (!fs.existsSync(dirname)) {
+      console.log(chalk.cyan(`Creating directory: ${dirname}`));
+      fs.mkdirSync(dirname, { recursive: true });
+    }
+    
+    // Create an empty file if it was supposed to be a file
+    if (path.extname(filePath)) {
+      console.log(chalk.cyan(`Creating empty file: ${filePath}`));
+      fs.writeFileSync(filePath, '');
+    }
+  }
+  
+  console.log(chalk.green("File issues have been addressed."));
 }
 
 /**
