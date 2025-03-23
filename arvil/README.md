@@ -1,6 +1,6 @@
 # ARVIL - Blockchain AI Engineer
 
-![ARVIL Banner](https://github.com/yourusername/arvil/raw/main/docs/assets/arvil-banner.png)
+![ARVIL Banner](https://github.com/capteeen/arvil-co-pilot/raw/main/docs/assets/arvil-banner.png)
 
 ARVIL (Advanced Robust Virtual Innovation Lab) is an AI-powered CLI tool that helps developers create, deploy, and manage blockchain applications on Solana. It combines the power of AI assistance with blockchain development tools to streamline your workflow.
 
@@ -65,9 +65,9 @@ arvil deploy --network devnet
 ## Documentation
 
 For detailed documentation, see:
-- [Getting Started Guide](https://github.com/yourusername/arvil/blob/main/GETTING-STARTED.md)
-- [Full Documentation](https://github.com/yourusername/arvil#documentation)
-- [API Reference](https://github.com/yourusername/arvil/wiki/API-Reference)
+- [Getting Started Guide](https://github.com/capteeen/arvil-co-pilot/blob/main/GETTING-STARTED.md)
+- [Full Documentation](https://github.com/capteeen/arvil-co-pilot#documentation)
+- [API Reference](https://github.com/capteeen/arvil-co-pilot/wiki/API-Reference)
 
 ## License
 
@@ -272,4 +272,13 @@ ARVIL now has improved input handling for sensitive information:
 ```
 ? Enter your OpenAI API key: ********************************
 ? Enter your Solana private key: ********************
-``` 
+```
+
+## Repository Update in v0.2.4
+
+ARVIL has moved to a new official repository:
+
+- **Updated Repository**: Now hosted at [github.com/capteeen/arvil-co-pilot](https://github.com/capteeen/arvil-co-pilot)
+- **Documentation Links**: All documentation links now point to the correct repository
+- **Issue Reporting**: Bug reports can now be submitted to the proper location
+- **Package Metadata**: NPM package information updated for better discoverability 
