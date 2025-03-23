@@ -256,4 +256,20 @@ File Details:
   ✓ Created: createToken.js
   ✓ Created: connection.js
 ──────────────────────────────────────
+```
+
+## Usability Improvements in v0.2.3
+
+ARVIL now has improved input handling for sensitive information:
+
+- **Password Masking**: API keys and private keys now show asterisks (*) during input
+- **Better Input Visibility**: See what you're typing without exposing sensitive information  
+- **Enhanced Security**: Maintains security while improving usability
+- **Consistent Masking**: Applied to all sensitive information prompts throughout ARVIL
+
+### Example Input Experience
+
+```
+? Enter your OpenAI API key: ********************************
+? Enter your Solana private key: ********************
 ``` 

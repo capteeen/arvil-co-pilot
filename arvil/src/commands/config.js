@@ -69,7 +69,8 @@ async function config() {
       type: 'password',
       name: 'apiKey',
       message: 'Enter your OpenAI API key:',
-      default: combinedConfig.OPENAI_API_KEY || ''
+      default: combinedConfig.OPENAI_API_KEY || '',
+      mask: '*'
     }
   ]);
   

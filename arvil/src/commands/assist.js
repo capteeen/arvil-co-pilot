@@ -605,6 +605,7 @@ async function detectAndPromptForPlaceholders(aiResponse, codeBlocks) {
             type: pattern.type === 'private_key' ? 'password' : 'input',
             name: 'value',
             message: pattern.message,
+            mask: pattern.type === 'private_key' || pattern.type === 'api_key' ? '*' : undefined,
             validate: pattern.validation
           }
         ]);
