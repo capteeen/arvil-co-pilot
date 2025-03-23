@@ -1,108 +1,181 @@
 const fs = require('fs-extra');
 const path = require('path');
 const chalk = require('chalk');
+const ora = require('ora');
 const inquirer = require('inquirer');
-const dotenv = require('dotenv');
-const os = require('os');
+const { isInProject, getProjectInfo } = require('../utils/project');
 
 /**
  * Configure ARVIL settings
+ * This includes OpenAI API keys and Solana network
  */
 async function config() {
-  // Get existing configuration
-  let existingConfig = {};
+  console.log(chalk.cyan('ARVIL Configuration\n'));
   
-  // Check for .arvil.json in user's home directory
-  const globalConfigPath = path.join(os.homedir(), '.arvil.json');
+  // Check if we have a global config file already
+  const userHomeDir = require('os').homedir();
+  const globalConfigPath = path.join(userHomeDir, '.arvil.json');
   
-  if (fs.existsSync(globalConfigPath)) {
+  // Check if project-specific config can be used
+  const inProject = isInProject();
+  let projectInfo = null;
+  if (inProject) {
     try {
-      existingConfig = JSON.parse(fs.readFileSync(globalConfigPath, 'utf8'));
+      projectInfo = getProjectInfo();
     } catch (error) {
-      console.log(chalk.yellow('Warning: Failed to read existing configuration.'));
+      // Continue with global config
     }
   }
   
-  // Check for local .env file
-  let localEnv = {};
-  if (fs.existsSync('.env')) {
-    localEnv = dotenv.parse(fs.readFileSync('.env'));
+  // Load existing configurations
+  let globalConfig = {};
+  let localConfig = {};
+  
+  if (fs.existsSync(globalConfigPath)) {
+    try {
+      globalConfig = JSON.parse(fs.readFileSync(globalConfigPath, 'utf8'));
+    } catch (error) {
+      console.log(chalk.yellow(`Warning: Could not parse global config file: ${error.message}`));
+    }
   }
   
-  // Combine global and local config
-  const config = {
-    ...existingConfig,
-    ...localEnv
+  if (inProject) {
+    const localEnvPath = path.join(process.cwd(), '.env');
+    if (fs.existsSync(localEnvPath)) {
+      // Parse .env file
+      const envContent = fs.readFileSync(localEnvPath, 'utf8');
+      envContent.split('\n').forEach(line => {
+        const match = line.match(/^([^=]+)=(.*)$/);
+        if (match) {
+          localConfig[match[1]] = match[2];
+        }
+      });
+    }
+  }
+  
+  // Combine configs, local takes precedence
+  const combinedConfig = { ...globalConfig, ...localConfig };
+  
+  // Function to clean API key by removing whitespace and newlines
+  const cleanApiKey = (key) => {
+    if (!key) return '';
+    // Remove all whitespace, newlines, and quotation marks
+    return key.replace(/[\s\n'"]+/g, '');
   };
   
-  console.log(chalk.cyan('ARVIL Configuration\n'));
-  
-  // Configuration questions
-  const questions = [
+  // Prompt for OpenAI API key
+  const { apiKey } = await inquirer.prompt([
     {
-      type: 'input',
-      name: 'OPENAI_API_KEY',
+      type: 'password',
+      name: 'apiKey',
       message: 'Enter your OpenAI API key:',
-      default: config.OPENAI_API_KEY || '',
-      validate: input => input.trim() === '' ? 'API key is required for AI features' : true
-    },
+      default: combinedConfig.OPENAI_API_KEY || ''
+    }
+  ]);
+  
+  // Clean the API key to handle multi-line input and extra characters
+  const cleanedApiKey = cleanApiKey(apiKey);
+  
+  // Validate the OpenAI API key format
+  const isValidOpenAIKey = (key) => {
+    // Basic format validation
+    const pattern = /^(sk-|sk-org-)[a-zA-Z0-9]{20,}$/;
+    
+    if (!pattern.test(key)) {
+      console.log(chalk.yellow('Warning: The API key format may not be valid. OpenAI keys typically start with "sk-" followed by characters.'));
+      console.log(chalk.yellow('Proceeding with the provided key, but be aware it might not work with the OpenAI API.'));
+      return false;
+    }
+    return true;
+  };
+  
+  // Validate the cleaned key
+  isValidOpenAIKey(cleanedApiKey);
+  
+  // Prompt for keypair file
+  const { keypairPath } = await inquirer.prompt([
     {
       type: 'input',
-      name: 'SOLANA_PRIVATE_KEY',
+      name: 'keypairPath',
       message: 'Enter path to your Solana keypair file (leave empty to skip):',
-      default: config.SOLANA_PRIVATE_KEY || '',
-    },
+      default: combinedConfig.KEYPAIR_PATH || ''
+    }
+  ]);
+  
+  // Prompt for network selection
+  const { network } = await inquirer.prompt([
     {
       type: 'list',
-      name: 'SOLANA_NETWORK',
+      name: 'network',
       message: 'Select default Solana network:',
       choices: [
         { name: 'Devnet (recommended for development)', value: 'devnet' },
         { name: 'Testnet', value: 'testnet' },
-        { name: 'Mainnet Beta', value: 'mainnet-beta' },
-        { name: 'Localnet', value: 'localnet' }
+        { name: 'Mainnet', value: 'mainnet' }
       ],
-      default: config.SOLANA_NETWORK || 'devnet'
-    },
+      default: combinedConfig.SOLANA_NETWORK || 'devnet'
+    }
+  ]);
+  
+  // Ask if user wants to save globally
+  const { saveGlobally } = await inquirer.prompt([
     {
       type: 'confirm',
       name: 'saveGlobally',
       message: 'Save configuration globally (for all projects)?',
-      default: false
+      default: true
     }
-  ];
+  ]);
   
-  const answers = await inquirer.prompt(questions);
-  
-  // Remove non-config fields
-  const { saveGlobally, ...configData } = answers;
-  
-  // Save configuration
+  // Save configs
   if (saveGlobally) {
     // Save to global config
-    fs.writeFileSync(globalConfigPath, JSON.stringify(configData, null, 2));
-    console.log(chalk.green(`\nConfiguration saved globally to ${globalConfigPath}`));
+    const newGlobalConfig = {
+      ...globalConfig,
+      OPENAI_API_KEY: cleanedApiKey,
+      KEYPAIR_PATH: keypairPath,
+      SOLANA_NETWORK: network
+    };
+    
+    try {
+      fs.writeFileSync(globalConfigPath, JSON.stringify(newGlobalConfig, null, 2));
+      console.log(chalk.green(`\nConfiguration saved globally to ${globalConfigPath}`));
+    } catch (error) {
+      console.log(chalk.red(`Error saving global config: ${error.message}`));
+    }
   }
   
-  // Always save to local .env if in a project directory
-  if (fs.existsSync('package.json')) {
-    // Create or update .env file
-    let envContent = '';
-    for (const [key, value] of Object.entries(configData)) {
-      envContent += `${key}=${value}\n`;
-    }
+  // Always save to local .env if in a project
+  if (inProject) {
+    const localEnvPath = path.join(process.cwd(), '.env');
     
-    fs.writeFileSync('.env', envContent);
-    console.log(chalk.green('\nConfiguration saved to local .env file'));
-    
-    // Add .env to .gitignore if it doesn't exist
-    if (fs.existsSync('.gitignore')) {
-      const gitignoreContent = fs.readFileSync('.gitignore', 'utf8');
-      if (!gitignoreContent.includes('.env')) {
-        fs.appendFileSync('.gitignore', '\n.env\n');
+    try {
+      // Load existing .env content if it exists
+      let envContent = '';
+      if (fs.existsSync(localEnvPath)) {
+        envContent = fs.readFileSync(localEnvPath, 'utf8');
       }
-    } else {
-      fs.writeFileSync('.gitignore', '.env\n');
+      
+      // Update values
+      const updateEnvVar = (content, key, value) => {
+        if (!value) return content; // Skip empty values
+        
+        const regex = new RegExp(`^${key}=.*$`, 'm');
+        if (regex.test(content)) {
+          return content.replace(regex, `${key}=${value}`);
+        } else {
+          return content + (content && !content.endsWith('\n') ? '\n' : '') + `${key}=${value}\n`;
+        }
+      };
+      
+      envContent = updateEnvVar(envContent, 'OPENAI_API_KEY', cleanedApiKey);
+      envContent = updateEnvVar(envContent, 'KEYPAIR_PATH', keypairPath);
+      envContent = updateEnvVar(envContent, 'SOLANA_NETWORK', network);
+      
+      fs.writeFileSync(localEnvPath, envContent);
+      console.log(chalk.green('\nConfiguration saved to local .env file'));
+    } catch (error) {
+      console.log(chalk.red(`Error saving local config: ${error.message}`));
     }
   } else if (!saveGlobally) {
     console.log(chalk.yellow('\nNot in a project directory, and not saving globally.'));

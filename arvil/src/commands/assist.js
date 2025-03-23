@@ -15,6 +15,27 @@ let openai = null;
 // Track created files
 const createdFiles = new Set();
 
+// Track execution statistics for summary
+const executionStats = {
+  commands: {
+    executed: [],
+    successful: 0,
+    failed: 0
+  },
+  files: {
+    created: [],
+    updated: [],
+    failed: []
+  },
+  errors: {
+    detected: 0,
+    resolved: 0,
+    unresolved: 0
+  },
+  startTime: null,
+  endTime: null
+};
+
 // Auto-execution settings
 const AUTO_EXECUTE = true; // Set to true to auto-execute without prompting
 
@@ -23,6 +44,9 @@ const AUTO_EXECUTE = true; // Set to true to auto-execute without prompting
  * @param {string} query - The query to get assistance for
  */
 async function assist(query) {
+  // Reset execution stats
+  resetExecutionStats();
+  
   // Check if in a project directory
   let projectInfo = null;
   let projectWarningShown = false;
@@ -117,10 +141,21 @@ async function assist(query) {
       if (AUTO_EXECUTE) {
         // Automatically process code blocks without prompting
         await autoProcessCodeBlocks(codeBlocks, aiResponse, projectInfo);
+        
+        // Display summary after execution
+        displayExecutionSummary();
       } else {
         // Use the interactive mode if AUTO_EXECUTE is false
         await handleCodeBlocks(codeBlocks, projectInfo);
+        
+        // Display summary after execution
+        displayExecutionSummary();
       }
+    }
+    else {
+      // No code blocks to execute, but still show summary
+      executionStats.endTime = new Date();
+      displayExecutionSummary();
     }
     
   } catch (error) {
@@ -131,7 +166,96 @@ async function assist(query) {
       console.log(chalk.yellow('Please check your OpenAI API key:'));
       console.log(chalk.cyan('  arvil config'));
     }
+    
+    // Add the error to stats
+    executionStats.errors.detected++;
+    executionStats.errors.unresolved++;
+    executionStats.endTime = new Date();
+    displayExecutionSummary();
   }
+}
+
+/**
+ * Reset execution statistics
+ */
+function resetExecutionStats() {
+  executionStats.commands.executed = [];
+  executionStats.commands.successful = 0;
+  executionStats.commands.failed = 0;
+  executionStats.files.created = [];
+  executionStats.files.updated = [];
+  executionStats.files.failed = [];
+  executionStats.errors.detected = 0;
+  executionStats.errors.resolved = 0;
+  executionStats.errors.unresolved = 0;
+  executionStats.startTime = new Date();
+  executionStats.endTime = null;
+}
+
+/**
+ * Display summary of execution
+ */
+function displayExecutionSummary() {
+  // Set end time if not set
+  if (!executionStats.endTime) {
+    executionStats.endTime = new Date();
+  }
+  
+  // Calculate elapsed time
+  const elapsedTime = Math.round((executionStats.endTime - executionStats.startTime) / 1000);
+  
+  console.log(chalk.cyan('\n┌─────────────────────────────────────┐'));
+  console.log(chalk.cyan('│           EXECUTION SUMMARY          │'));
+  console.log(chalk.cyan('└─────────────────────────────────────┘'));
+  
+  // Commands summary
+  console.log(chalk.cyan('Commands:'));
+  console.log(chalk.green(`  ✓ Successful: ${executionStats.commands.successful}`));
+  console.log(chalk.red(`  ✗ Failed: ${executionStats.commands.failed}`));
+  
+  // Files summary
+  console.log(chalk.cyan('\nFiles:'));
+  console.log(chalk.green(`  ✓ Created: ${executionStats.files.created.length}`));
+  console.log(chalk.yellow(`  ⟳ Updated: ${executionStats.files.updated.length}`));
+  console.log(chalk.red(`  ✗ Failed: ${executionStats.files.failed.length}`));
+  
+  // Errors summary
+  console.log(chalk.cyan('\nErrors:'));
+  console.log(chalk.yellow(`  ⚠ Detected: ${executionStats.errors.detected}`));
+  console.log(chalk.green(`  ✓ Resolved: ${executionStats.errors.resolved}`));
+  console.log(chalk.red(`  ✗ Unresolved: ${executionStats.errors.unresolved}`));
+  
+  // Time summary
+  console.log(chalk.cyan('\nTime:'));
+  console.log(chalk.white(`  ⏱ Elapsed: ${elapsedTime} seconds`));
+  
+  // Command details if any were executed
+  if (executionStats.commands.executed.length > 0) {
+    console.log(chalk.cyan('\nCommand Details:'));
+    executionStats.commands.executed.forEach((cmd, i) => {
+      const icon = cmd.success ? chalk.green('✓') : chalk.red('✗');
+      console.log(`  ${icon} ${cmd.command.substring(0, 60)}${cmd.command.length > 60 ? '...' : ''}`);
+    });
+  }
+  
+  // File details if any were created/updated
+  if (executionStats.files.created.length > 0 || executionStats.files.updated.length > 0) {
+    console.log(chalk.cyan('\nFile Details:'));
+    
+    executionStats.files.created.forEach(file => {
+      console.log(chalk.green(`  ✓ Created: ${file}`));
+    });
+    
+    executionStats.files.updated.forEach(file => {
+      console.log(chalk.yellow(`  ⟳ Updated: ${file}`));
+    });
+    
+    executionStats.files.failed.forEach(file => {
+      console.log(chalk.red(`  ✗ Failed: ${file}`));
+    });
+  }
+  
+  console.log(chalk.cyan('\n──────────────────────────────────────'));
 }
 
 /**
@@ -148,10 +272,13 @@ function extractCodeBlocks(markdown) {
     const language = match[1].trim().toLowerCase();
     const code = match[2].trim();
     
-    codeBlocks.push({
-      language,
-      code
-    });
+    // Skip empty code blocks
+    if (code.trim()) {
+      codeBlocks.push({
+        language,
+        code
+      });
+    }
   }
 
   return codeBlocks;
@@ -172,8 +299,20 @@ async function autoProcessCodeBlocks(codeBlocks, aiResponse, projectInfo = null)
   const placeholderValues = await detectAndPromptForPlaceholders(aiResponse, codeBlocks);
   
   // First, create all identified files from the codeblocks
-  const fileBlocks = codeBlocks.filter(block => 
-    !['bash', 'shell', 'sh', ''].includes(block.language));
+  const fileBlocks = codeBlocks.filter(block => {
+    // Classify code blocks better - filter out bash/shell commands
+    const isBashOrShell = ['bash', 'shell', 'sh', ''].includes(block.language);
+    
+    // Detect if it's a command block even if not explicitly labeled
+    const looksLikeCommand = !block.language && (
+      block.code.trim().startsWith('npm ') ||
+      block.code.trim().startsWith('node ') ||
+      block.code.trim().startsWith('cd ') ||
+      block.code.trim().startsWith('mkdir ')
+    );
+    
+    return !isBashOrShell && !looksLikeCommand;
+  });
   
   // Extract potential filenames from the response
   const filenameMatcher = /file[s]? (?:named|called) [`"]?([a-zA-Z0-9._\-/]+)[`"]?/gi;
@@ -235,6 +374,12 @@ async function autoProcessCodeBlocks(codeBlocks, aiResponse, projectInfo = null)
         }
       }
       
+      // Make sure we have a valid filename
+      if (!filename || filename.trim() === '') {
+        console.log(chalk.yellow(`Warning: Could not determine filename for code block ${i+1}`));
+        continue;
+      }
+      
       // Add path awareness - ensure files are created in the right location
       // If we're in a project, make sure paths are relative to the project
       if (projectInfo && !filename.startsWith('/')) {
@@ -261,6 +406,43 @@ async function autoProcessCodeBlocks(codeBlocks, aiResponse, projectInfo = null)
       // Replace placeholders in the code with user-provided values
       let codeWithReplacements = replacePlaceholders(block.code, placeholderValues);
       
+      // Special handling for .env files
+      if (filename.endsWith('.env')) {
+        // Ensure .env content has proper format (KEY=VALUE)
+        codeWithReplacements = codeWithReplacements
+          .split('\n')
+          .map(line => {
+            // Keep comments and empty lines as is
+            if (line.trim() === '' || line.trim().startsWith('#')) {
+              return line;
+            }
+            
+            // If line is malformed JavaScript (like the example showed), clean it up
+            if (line.includes('//')) {
+              line = line.split('//')[0].trim();
+            }
+            
+            // Extract key and value
+            const parts = line.split('=');
+            if (parts.length >= 2) {
+              const key = parts[0].trim();
+              // Join the rest in case value contained = characters
+              let value = parts.slice(1).join('=').trim();
+              
+              // Strip quotes from value if they exist
+              if ((value.startsWith('"') && value.endsWith('"')) || 
+                  (value.startsWith("'") && value.endsWith("'"))) {
+                value = value.substring(1, value.length - 1);
+              }
+              
+              return `${key}=${value}`;
+            }
+            
+            return line;
+          })
+          .join('\n');
+      }
+      
       try {
         await createFile(filename, codeWithReplacements);
       } catch (error) {
@@ -271,11 +453,25 @@ async function autoProcessCodeBlocks(codeBlocks, aiResponse, projectInfo = null)
   }
   
   // Then execute terminal commands
-  const commandBlocks = codeBlocks.filter(block => 
-    ['bash', 'shell', 'sh', ''].includes(block.language));
+  const commandBlocks = codeBlocks.filter(block => {
+    const isBashOrShell = ['bash', 'shell', 'sh', ''].includes(block.language);
+    
+    // Detect if it's a command block even if not explicitly labeled
+    const looksLikeCommand = !block.language && (
+      block.code.trim().startsWith('npm ') ||
+      block.code.trim().startsWith('node ') ||
+      block.code.trim().startsWith('cd ') ||
+      block.code.trim().startsWith('mkdir ')
+    );
+    
+    return isBashOrShell || looksLikeCommand;
+  });
   
   if (commandBlocks.length > 0) {
     console.log(chalk.cyan('\nExecuting commands automatically:'));
+    
+    // Track executed commands to avoid redundancy
+    const executedCommands = new Set();
     
     for (const block of commandBlocks) {
       // Skip commands that might be unsafe or are just examples
@@ -285,20 +481,38 @@ async function autoProcessCodeBlocks(codeBlocks, aiResponse, projectInfo = null)
         continue;
       }
       
+      // Split multi-line commands and process one at a time
+      const commandLines = block.code
+        .split('\n')
+        .filter(line => line.trim() && !line.trim().startsWith('#'))
+        // Remove trailing backslashes that can cause syntax errors
+        .map(line => line.replace(/\s*\\$/, ''));
+      
       // Replace placeholders with user input
-      const commandWithReplacements = replacePlaceholders(block.code, placeholderValues);
-      
-      // Skip example commands that haven't been properly filled in
-      if (commandWithReplacements.includes('[YourPrivateKey') || 
-          commandWithReplacements.includes('your_actual_private_key_here')) {
-        console.log(chalk.yellow(`Skipping example command: ${commandWithReplacements.substring(0, 50)}...`));
-        continue;
-      }
-      
-      const result = await executeCommand(commandWithReplacements);
-      if (!result.success) {
-        errorsOccurred = true;
-        errorMessages.push(`Command failed: ${commandWithReplacements}`);
+      for (const line of commandLines) {
+        const commandWithReplacements = replacePlaceholders(line, placeholderValues);
+        
+        // Skip example commands that haven't been properly filled in
+        if (commandWithReplacements.includes('[YourPrivateKey') || 
+            commandWithReplacements.includes('your_actual_private_key_here')) {
+          console.log(chalk.yellow(`Skipping example command: ${commandWithReplacements.substring(0, 50)}...`));
+          continue;
+        }
+        
+        // Skip if we've already executed this command (avoid duplicates)
+        if (executedCommands.has(commandWithReplacements)) {
+          console.log(chalk.yellow(`Skipping duplicate command: ${commandWithReplacements}`));
+          continue;
+        }
+        
+        // Add to executed commands tracking
+        executedCommands.add(commandWithReplacements);
+        
+        const result = await executeCommand(commandWithReplacements);
+        if (!result.success) {
+          errorsOccurred = true;
+          errorMessages.push(`Command failed: ${commandWithReplacements}`);
+        }
       }
     }
   }
@@ -308,6 +522,9 @@ async function autoProcessCodeBlocks(codeBlocks, aiResponse, projectInfo = null)
     console.log(chalk.yellow('\nErrors occurred during execution. Attempting to resolve...'));
     for (const errorMsg of errorMessages) {
       console.log(chalk.red(`- ${errorMsg}`));
+      
+      // Add to error stats
+      executionStats.errors.detected++;
     }
     
     // Use AI to suggest fixes for the errors
@@ -500,10 +717,56 @@ function replacePlaceholders(code, placeholderValues) {
  */
 async function createFile(filename, content) {
   try {
+    // Validate input params
+    if (!filename) {
+      console.error(chalk.red(`Error: Invalid filename provided`));
+      
+      // Add to failed files stats
+      executionStats.files.failed.push('unnamed file');
+      return false;
+    }
+    
     // Create containing directories if they don't exist
     const dirname = path.dirname(filename);
     if (dirname !== '.') {
       fs.mkdirpSync(dirname);
+    }
+    
+    // Special handling for .env files to ensure proper format
+    if (filename.endsWith('.env')) {
+      // Make sure each line is properly formatted as KEY=VALUE
+      content = content.split('\n')
+        .map(line => {
+          // Skip comments and empty lines
+          if (line.trim().startsWith('#') || line.trim() === '') {
+            return line;
+          }
+          
+          // Fix malformed environment variables
+          const match = line.match(/([A-Za-z_][A-Za-z0-9_]*)=?(.*)$/);
+          if (match) {
+            const key = match[1];
+            let value = match[2].trim();
+            
+            // Handle bracketed values like [YourPrivateKeyHere]
+            if (value.startsWith('[') && value.endsWith(']')) {
+              value = value;
+            } 
+            // Handle quoted values
+            else if ((value.startsWith('"') && value.endsWith('"')) || 
+                     (value.startsWith("'") && value.endsWith("'"))) {
+              value = value;
+            }
+            // Add quotes to values without them
+            else if (value && !value.includes('=')) {
+              value = value;
+            }
+            
+            return `${key}=${value}`;
+          }
+          return line;
+        })
+        .join('\n');
     }
     
     // Write the file
@@ -513,13 +776,25 @@ async function createFile(filename, content) {
     // Add to tracked files
     createdFiles.add(filename);
     
+    // Add to created files stats
+    executionStats.files.created.push(filename);
+    
     // Make executable if it's a script
     if (filename.endsWith('.sh') || filename.endsWith('.js')) {
       fs.chmodSync(filename, '755');
       console.log(chalk.green(`  Made ${filename} executable`));
     }
+    
+    return true;
   } catch (error) {
     console.error(chalk.red(`Error creating file: ${error.message}`));
+    
+    // Add to failed files stats
+    executionStats.files.failed.push(filename);
+    
+    // Add to error stats
+    executionStats.errors.detected++;
+    return false;
   }
 }
 
@@ -530,6 +805,14 @@ async function createFile(filename, content) {
 async function executeCommand(command) {
   console.log(chalk.cyan(`$ ${command}`));
   const spinner = ora('Running command').start();
+  
+  // Add to executed commands stats
+  const commandStats = {
+    command,
+    success: false,
+    timestamp: new Date()
+  };
+  executionStats.commands.executed.push(commandStats);
   
   try {
     const { stdout, stderr } = await execAsync(command);
@@ -546,14 +829,28 @@ async function executeCommand(command) {
       
       // Check if error is serious enough to attempt resolution
       if (stderr.includes('Error:') || stderr.includes('error:') || stderr.includes('fatal:')) {
+        // Add to error stats
+        executionStats.errors.detected++;
+        
         await attemptErrorResolution(command, stderr);
       }
     }
+    
+    // Update command stats to successful
+    commandStats.success = true;
+    executionStats.commands.successful++;
     
     return { success: true, output: stdout, error: stderr };
   } catch (error) {
     spinner.fail('Command failed');
     console.error(chalk.red(`Error: ${error.message}`));
+    
+    // Update command stats as failed
+    commandStats.success = false;
+    executionStats.commands.failed++;
+    
+    // Add to error stats
+    executionStats.errors.detected++;
     
     // Attempt to resolve the error
     await attemptErrorResolution(command, error.message);
@@ -572,6 +869,9 @@ async function attemptErrorResolution(failedCommand, errorMessage) {
   
   // Track attempted solutions to avoid loops
   const attemptedSolutions = new Set();
+  
+  // Track commands that have been executed to avoid redundant execution
+  const executedCommands = new Set();
   
   // Prepare the context for the AI
   const context = {
@@ -646,7 +946,9 @@ async function attemptErrorResolution(failedCommand, errorMessage) {
           // For shell commands, execute one by one
           const commandLines = block.code
             .split('\n')
-            .filter(line => line.trim() && !line.trim().startsWith('#'));
+            .filter(line => line.trim() && !line.trim().startsWith('#'))
+            // Remove trailing backslashes that can cause syntax errors
+            .map(line => line.replace(/\s*\\$/, ''));
           
           for (const command of commandLines) {
             // Skip potentially unsafe commands
@@ -654,6 +956,15 @@ async function attemptErrorResolution(failedCommand, errorMessage) {
               console.log(chalk.yellow(`Skipping potentially unsafe command: ${command}`));
               continue;
             }
+            
+            // Skip if we've already executed this exact command
+            if (executedCommands.has(command)) {
+              console.log(chalk.yellow(`Skipping already executed command: ${command}`));
+              continue;
+            }
+            
+            // Add to executed commands set
+            executedCommands.add(command);
             
             console.log(chalk.cyan(`Executing: ${command}`));
             const result = await executeCommand(command);
@@ -669,11 +980,53 @@ async function attemptErrorResolution(failedCommand, errorMessage) {
           }
         } else {
           // For file content, try to determine the target file from the solution text
-          const fileMatch = solution.match(/create|modify|update|fix (?:the )?(?:file )?[`'"]?([^`'"\s]+\.[a-zA-Z]+)[`'"]?/i);
-          if (fileMatch) {
-            const filename = fileMatch[1];
-            await createFile(filename, block.code);
-            console.log(chalk.green(`✓ Created/updated file: ${filename}`));
+          const fileMatchers = [
+            /create|modify|update|fix (?:the )?(?:file )?[`'"]?([^`'"\s]+\.[a-zA-Z]+)[`'"]?/i,
+            /file (?:named|called) [`'"]?([^`'"\s]+\.[a-zA-Z]+)[`'"]?/i,
+            /[`'"]?([^`'"\s]+\.(?:js|ts|env|json|md|yml|yaml|sh|rs|sol))[`'"]?/i
+          ];
+          
+          let filename = null;
+          
+          // Try each matcher until we find a filename
+          for (const matcher of fileMatchers) {
+            const match = solution.match(matcher);
+            if (match) {
+              filename = match[1];
+              break;
+            }
+          }
+          
+          // If no filename was found in the solution text, try to guess from the language
+          if (!filename) {
+            switch (block.language) {
+              case 'javascript':
+              case 'js':
+                filename = 'fix.js';
+                break;
+              case 'json':
+                filename = 'config.json';
+                break;
+              case 'env':
+              case 'plaintext':
+                if (block.code.includes('=')) {
+                  filename = '.env';
+                } else {
+                  filename = 'fix.txt';
+                }
+                break;
+              default:
+                filename = `fix.${block.language || 'txt'}`;
+            }
+          }
+          
+          if (filename) {
+            const success = await createFile(filename, block.code);
+            if (success) {
+              console.log(chalk.green(`✓ Created/updated file: ${filename}`));
+            }
+          } else {
+            console.log(chalk.yellow(`Could not determine filename for code block with language: ${block.language}`));
           }
         }
       }
@@ -737,66 +1090,37 @@ async function handleEslintErrors(errorMessage) {
   // Determine current directory
   const currentDir = process.cwd();
   
+  // Track what approach we've tried for this specific project
+  // This prevents trying multiple conflicting ESLint config approaches  
+  const eslintFixApproach = new Set();
+  
   // ESLint v9 uses eslint.config.js, previous versions use .eslintrc.*
-  if (errorMessage.includes("ESLint couldn't find an eslint.config")) {
-    // Check if .eslintrc.* exists
-    const eslintrcExists = fs.existsSync(path.join(currentDir, '.eslintrc.js')) || 
-                          fs.existsSync(path.join(currentDir, '.eslintrc.json')) || 
-                          fs.existsSync(path.join(currentDir, '.eslintrc'));
+  if (errorMessage.includes("ESLint couldn't find an eslint.config") || 
+      errorMessage.includes("ESLint") || 
+      errorMessage.includes("eslint")) {
     
-    if (eslintrcExists) {
-      // Convert .eslintrc.* to eslint.config.js
-      console.log(chalk.cyan("Converting .eslintrc.* to eslint.config.js format..."));
-      
-      // Find which .eslintrc file exists
-      let oldConfigFile = '';
-      if (fs.existsSync(path.join(currentDir, '.eslintrc.js'))) {
-        oldConfigFile = '.eslintrc.js';
-      } else if (fs.existsSync(path.join(currentDir, '.eslintrc.json'))) {
-        oldConfigFile = '.eslintrc.json';
-      } else if (fs.existsSync(path.join(currentDir, '.eslintrc'))) {
-        oldConfigFile = '.eslintrc';
-      }
-      
-      // Create minimal eslint.config.js
-      const configContent = `export default [
-  {
-    ignores: ['node_modules/**', 'dist/**', 'build/**'],
-  },
-  {
-    files: ['**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx'],
-    languageOptions: {
-      ecmaVersion: 2022,
-      sourceType: 'module',
-    },
-    rules: {
-      // Basic rules
-      'no-unused-vars': 'warn',
-      'no-undef': 'error',
-    },
-  },
-];`;
-      
-      // Write new config file
-      fs.writeFileSync(path.join(currentDir, 'eslint.config.js'), configContent);
-      console.log(chalk.green("✓ Created eslint.config.js with basic rules"));
-      
-      // Add type:module to package.json if it doesn't exist
+    // Check which ESLint configs already exist
+    const hasEslintConfig = fs.existsSync(path.join(currentDir, 'eslint.config.js'));
+    const hasEslintRcJs = fs.existsSync(path.join(currentDir, '.eslintrc.js'));
+    const hasEslintRcJson = fs.existsSync(path.join(currentDir, '.eslintrc.json'));
+    const hasEslintRc = fs.existsSync(path.join(currentDir, '.eslintrc'));
+    const hasPackageJson = fs.existsSync(path.join(currentDir, 'package.json'));
+    
+    let packageJson = null;
+    if (hasPackageJson) {
       try {
-        const packageJsonPath = path.join(currentDir, 'package.json');
-        if (fs.existsSync(packageJsonPath)) {
-          const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
-          if (!packageJson.type) {
-            packageJson.type = 'module';
-            fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
-            console.log(chalk.green("✓ Added type:module to package.json"));
-          }
-        }
+        packageJson = JSON.parse(fs.readFileSync(path.join(currentDir, 'package.json'), 'utf8'));
       } catch (error) {
-        console.log(chalk.yellow(`Warning: Could not update package.json: ${error.message}`));
+        console.log(chalk.yellow(`Warning: Could not parse package.json: ${error.message}`));
       }
-    } else {
-      // Create new eslint.config.js
+    }
+    
+    // Choose the appropriate fix based on the error and existing configuration
+    if (errorMessage.includes("ESLint couldn't find an eslint.config") && !eslintFixApproach.has('flat-config')) {
+      // ESLint v9+ flat config approach
+      eslintFixApproach.add('flat-config');
+      
+      // Create flat config
       const configContent = `export default [
   {
     ignores: ['node_modules/**', 'dist/**', 'build/**'],
@@ -816,27 +1140,78 @@ async function handleEslintErrors(errorMessage) {
 ];`;
       
       fs.writeFileSync(path.join(currentDir, 'eslint.config.js'), configContent);
-      console.log(chalk.green("✓ Created eslint.config.js with basic rules"));
+      console.log(chalk.green("✓ Created eslint.config.js with basic rules (ESLint v9+ flat config)"));
       
-      // Add type:module to package.json
-      try {
-        const packageJsonPath = path.join(currentDir, 'package.json');
-        if (fs.existsSync(packageJsonPath)) {
-          const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
-          if (!packageJson.type) {
-            packageJson.type = 'module';
-            fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
-            console.log(chalk.green("✓ Added type:module to package.json"));
+      // Add type:module to package.json if it exists
+      if (packageJson && !packageJson.type) {
+        packageJson.type = 'module';
+        fs.writeFileSync(path.join(currentDir, 'package.json'), JSON.stringify(packageJson, null, 2));
+        console.log(chalk.green("✓ Added type:module to package.json"));
+      }
+    }
+    else if ((errorMessage.includes("eslintrc") || !hasEslintConfig) && 
+             !eslintFixApproach.has('legacy-config')) {
+      // ESLint v8 and earlier approach with .eslintrc.*
+      eslintFixApproach.add('legacy-config');
+      
+      // If we don't have any eslintrc file, create one
+      if (!hasEslintRcJs && !hasEslintRcJson && !hasEslintRc) {
+        const configContent = {
+          "env": {
+            "browser": true,
+            "es2021": true,
+            "node": true
+          },
+          "extends": "eslint:recommended",
+          "parserOptions": {
+            "ecmaVersion": "latest",
+            "sourceType": "module"
+          },
+          "rules": {
+            "no-unused-vars": "warn",
+            "no-undef": "error"
           }
-        }
-      } catch (error) {
-        console.log(chalk.yellow(`Warning: Could not update package.json: ${error.message}`));
+        };
+        
+        fs.writeFileSync(path.join(currentDir, '.eslintrc.json'), JSON.stringify(configContent, null, 2));
+        console.log(chalk.green("✓ Created .eslintrc.json with basic rules (ESLint legacy config)"));
+      }
+    }
+    else if (!eslintFixApproach.has('package-json-config')) {
+      // Try ESLint config in package.json
+      eslintFixApproach.add('package-json-config');
+      
+      if (packageJson) {
+        // Add ESLint config to package.json
+        packageJson.eslintConfig = {
+          "env": {
+            "browser": true,
+            "es2021": true,
+            "node": true
+          },
+          "extends": "eslint:recommended",
+          "parserOptions": {
+            "ecmaVersion": "latest",
+            "sourceType": "module"
+          },
+          "rules": {
+            "no-unused-vars": "warn",
+            "no-undef": "error"
+          }
+        };
+        
+        fs.writeFileSync(path.join(currentDir, 'package.json'), JSON.stringify(packageJson, null, 2));
+        console.log(chalk.green("✓ Added eslintConfig to package.json"));
       }
     }
   }
   
   // Ensure ESLint is installed
-  await executeCommand('npm install eslint --save-dev');
+  try {
+    await executeCommand('npm install eslint --save-dev');
+  } catch (error) {
+    console.log(chalk.yellow(`Warning: Could not install ESLint: ${error.message}`));
+  }
   
   console.log(chalk.green("ESLint configuration has been fixed."));
 }

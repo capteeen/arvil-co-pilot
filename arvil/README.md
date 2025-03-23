@@ -188,4 +188,72 @@ arvil assist "Create an ESLint config for my project"
 # 3. Track attempted solutions to avoid repetition
 # 4. Progressively apply more specific fixes if needed
 # 5. Provide clear feedback throughout the process
+```
+
+## Bugfixes in v0.2.1
+
+ARVIL's terminal error handling and file creation has been improved:
+
+- **Better .env File Handling**: Properly formats environment variables from code blocks
+- **Improved API Key Validation**: Handles multi-line keys and validates format
+- **Enhanced Error Resolution**: Smarter approach to fixing ESLint configuration issues
+- **Command Execution Fixes**: Resolves issues with trailing backslashes in multi-line commands
+- **Duplicate Command Prevention**: Avoids repeatedly executing the same command
+
+### Example
+
+```bash
+# When creating a token on Solana, ARVIL will now:
+arvil assist "Create a simple SPL token on Solana"
+
+# ARVIL correctly:
+# 1. Creates .env files with proper KEY=VALUE format
+# 2. Handles multi-line command execution without syntax errors
+# 3. Properly determines appropriate file types based on content
+# 4. Avoids repeatedly trying the same solutions for errors
+```
+
+## New Features in v0.2.2
+
+ARVIL now provides detailed execution summaries:
+
+- **Execution Statistics**: Track successful and failed commands and file operations
+- **Detailed Command Log**: See a history of all executed commands with status indicators
+- **Error Resolution Stats**: View how many errors were detected and resolved
+- **File Operation Details**: List all created, updated, and failed files
+- **Time Tracking**: See how long your ARVIL operations took to complete
+
+### Example Execution Summary
+
+```
+┌─────────────────────────────────────┐
+│           EXECUTION SUMMARY          │
+└─────────────────────────────────────┘
+Commands:
+  ✓ Successful: 3
+  ✗ Failed: 1
+
+Files:
+  ✓ Created: 2
+  ⟳ Updated: 0
+  ✗ Failed: 0
+
+Errors:
+  ⚠ Detected: 1
+  ✓ Resolved: 1
+  ✗ Unresolved: 0
+
+Time:
+  ⏱ Elapsed: 12 seconds
+
+Command Details:
+  ✓ npm init -y
+  ✓ npm install @solana/web3.js @solana/spl-token dotenv
+  ✗ node createToken.js
+  ✓ npm install @solana/web3.js
+
+File Details:
+  ✓ Created: createToken.js
+  ✓ Created: connection.js
+──────────────────────────────────────
 ``` 
