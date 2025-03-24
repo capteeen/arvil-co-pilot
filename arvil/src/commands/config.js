@@ -104,17 +104,52 @@ async function config() {
   ]);
   
   // Prompt for network selection
-  const { network } = await inquirer.prompt([
+  const { blockchain, network } = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'blockchain',
+      message: 'Select blockchain platform:',
+      choices: [
+        { name: 'Solana', value: 'solana' },
+        { name: 'Ethereum', value: 'ethereum' },
+        { name: 'Base', value: 'base' }
+      ],
+      default: combinedConfig.BLOCKCHAIN_PLATFORM || 'solana'
+    },
     {
       type: 'list',
       name: 'network',
-      message: 'Select default Solana network:',
-      choices: [
-        { name: 'Devnet (recommended for development)', value: 'devnet' },
-        { name: 'Testnet', value: 'testnet' },
-        { name: 'Mainnet', value: 'mainnet' }
-      ],
-      default: combinedConfig.SOLANA_NETWORK || 'devnet'
+      message: 'Select default network:',
+      choices: (answers) => {
+        switch (answers.blockchain) {
+          case 'solana':
+            return [
+              { name: 'Devnet (recommended for development)', value: 'devnet' },
+              { name: 'Testnet', value: 'testnet' },
+              { name: 'Mainnet', value: 'mainnet-beta' }
+            ];
+          case 'ethereum':
+            return [
+              { name: 'Goerli Testnet (recommended for development)', value: 'goerli' },
+              { name: 'Sepolia Testnet', value: 'sepolia' },
+              { name: 'Mainnet', value: 'mainnet' }
+            ];
+          case 'base':
+            return [
+              { name: 'Base Goerli Testnet (recommended for development)', value: 'base-goerli' },
+              { name: 'Base Sepolia Testnet', value: 'base-sepolia' },
+              { name: 'Base Mainnet', value: 'base-mainnet' }
+            ];
+        }
+      },
+      default: (answers) => {
+        const networkDefaults = {
+          solana: 'devnet',
+          ethereum: 'goerli',
+          base: 'base-goerli'
+        };
+        return combinedConfig.DEFAULT_NETWORK || networkDefaults[answers.blockchain];
+      }
     }
   ]);
   
@@ -135,7 +170,8 @@ async function config() {
       ...globalConfig,
       OPENAI_API_KEY: cleanedApiKey,
       KEYPAIR_PATH: keypairPath,
-      SOLANA_NETWORK: network
+      BLOCKCHAIN_PLATFORM: blockchain,
+      DEFAULT_NETWORK: network
     };
     
     try {
@@ -171,7 +207,8 @@ async function config() {
       
       envContent = updateEnvVar(envContent, 'OPENAI_API_KEY', cleanedApiKey);
       envContent = updateEnvVar(envContent, 'KEYPAIR_PATH', keypairPath);
-      envContent = updateEnvVar(envContent, 'SOLANA_NETWORK', network);
+      envContent = updateEnvVar(envContent, 'BLOCKCHAIN_PLATFORM', blockchain);
+      envContent = updateEnvVar(envContent, 'DEFAULT_NETWORK', network);
       
       fs.writeFileSync(localEnvPath, envContent);
       console.log(chalk.green('\nConfiguration saved to local .env file'));

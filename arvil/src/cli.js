@@ -13,7 +13,7 @@ const dotenv = require('dotenv');
 dotenv.config();
 
 // Version
-const VERSION = '0.2.5';
+const VERSION = '0.3.0';
 
 // Add error handling to prevent crashes
 process.on('uncaughtException', (error) => {
@@ -119,7 +119,8 @@ if (deploy) {
   program
     .command('deploy')
     .description('Deploy your smart contract to the blockchain')
-    .option('-n, --network <network>', 'Network to deploy to', 'devnet')
+    .option('-b, --blockchain <blockchain>', 'Blockchain platform to deploy to (solana/ethereum/base)', 'solana')
+    .option('-n, --network <network>', 'Network to deploy to (e.g., devnet, goerli, base-goerli)', 'devnet')
     .action((options) => {
       deploy(options);
     });

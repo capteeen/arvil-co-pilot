@@ -9,7 +9,7 @@ const execAsync = promisify(exec);
 const { isProjectDirectory } = require('../utils/project');
 
 /**
- * Deploy a Solana smart contract
+ * Deploy a smart contract
  * @param {Object} options - Deploy options
  */
 async function deploy(options) {
@@ -20,16 +20,45 @@ async function deploy(options) {
     return;
   }
 
-  // Validate network
-  const validNetworks = ['devnet', 'testnet', 'mainnet-beta', 'localnet'];
-  if (!validNetworks.includes(options.network)) {
-    console.log(chalk.red(`Error: Invalid network "${options.network}".`));
-    console.log(chalk.yellow(`Valid networks are: ${validNetworks.join(', ')}`));
+  // Load project configuration
+  const projectConfig = loadProjectConfig();
+  const blockchain = options.blockchain || projectConfig.BLOCKCHAIN_PLATFORM || 'solana';
+  const network = options.network || projectConfig.DEFAULT_NETWORK || getDefaultNetwork(blockchain);
+
+  // Validate network based on blockchain platform
+  if (!isValidNetwork(blockchain, network)) {
+    console.log(chalk.red(`Error: Invalid network "${network}" for ${blockchain}.`));
+    console.log(chalk.yellow(`Valid networks for ${blockchain} are: ${getValidNetworks(blockchain).join(', ')}`));
     return;
   }
 
+  // Initialize spinner
+  const spinner = ora('Preparing deployment...').start();
+
+  try {
+    switch (blockchain) {
+      case 'solana':
+        await deploySolana(options, spinner);
+        break;
+      case 'ethereum':
+      case 'base':
+        await deployEVM(blockchain, options, spinner);
+        break;
+      default:
+        spinner.fail(`Unsupported blockchain platform: ${blockchain}`);
+        return;
+    }
+  } catch (error) {
+    spinner.fail('Deployment failed');
+    console.error(chalk.red(error.message));
+  }
+}
+
+/**
+ * Deploy a Solana smart contract
+ */
+async function deploySolana(options, spinner) {
   // Check for Solana CLI
-  const spinner = ora('Checking Solana CLI installation...').start();
   try {
     await execAsync('solana --version');
     spinner.succeed('Solana CLI is installed');
@@ -206,6 +235,179 @@ async function deploy(options) {
       fs.removeSync(privateKeyPath);
     }
   }
+}
+
+/**
+ * Deploy an EVM-compatible smart contract
+ */
+async function deployEVM(blockchain, options, spinner) {
+  // Check for required tools
+  try {
+    await execAsync('npm list hardhat');
+    spinner.succeed('Hardhat is installed');
+  } catch (error) {
+    spinner.fail('Hardhat is not installed');
+    console.log(chalk.yellow('Installing required dependencies...'));
+    try {
+      await execAsync('npm install --save-dev hardhat @nomicfoundation/hardhat-toolbox');
+      spinner.succeed('Dependencies installed');
+    } catch (error) {
+      spinner.fail('Failed to install dependencies');
+      console.error(chalk.red(error.message));
+      return;
+    }
+  }
+
+  // Configure network in hardhat.config.js if it doesn't exist
+  await configureHardhat(blockchain, options.network);
+
+  // Deploy using Hardhat
+  spinner.text = `Deploying to ${blockchain} ${options.network}...`;
+  try {
+    await execAsync(`npx hardhat run scripts/deploy.js --network ${options.network}`);
+    spinner.succeed('Contract deployed successfully!');
+  } catch (error) {
+    spinner.fail('Deployment failed');
+    console.error(chalk.red(error.message));
+  }
+}
+
+/**
+ * Configure Hardhat for the specified network
+ */
+async function configureHardhat(blockchain, network) {
+  const configPath = path.join(process.cwd(), 'hardhat.config.js');
+  const envPath = path.join(process.cwd(), '.env');
+
+  // Ensure .env exists and has required variables
+  if (!fs.existsSync(envPath)) {
+    const envContent = `PRIVATE_KEY=
+${blockchain.toUpperCase()}_RPC_URL=
+ETHERSCAN_API_KEY=`;
+    fs.writeFileSync(envPath, envContent);
+  }
+
+  // Create or update hardhat.config.js
+  const configContent = `require("@nomicfoundation/hardhat-toolbox");
+require('dotenv').config();
+
+const privateKey = process.env.PRIVATE_KEY || "";
+const rpcUrl = process.env.${blockchain.toUpperCase()}_RPC_URL || "";
+
+module.exports = {
+  solidity: "0.8.19",
+  networks: {
+    ${getHardhatNetworkConfig(blockchain, network)}
+  },
+  etherscan: {
+    apiKey: process.env.ETHERSCAN_API_KEY
+  }
+};`;
+
+  fs.writeFileSync(configPath, configContent);
+}
+
+/**
+ * Get network configuration for hardhat.config.js
+ */
+function getHardhatNetworkConfig(blockchain, network) {
+  const configs = {
+    ethereum: {
+      goerli: `goerli: {
+        url: process.env.ETHEREUM_RPC_URL,
+        accounts: [privateKey]
+      }`,
+      sepolia: `sepolia: {
+        url: process.env.ETHEREUM_RPC_URL,
+        accounts: [privateKey]
+      }`,
+      mainnet: `mainnet: {
+        url: process.env.ETHEREUM_RPC_URL,
+        accounts: [privateKey]
+      }`
+    },
+    base: {
+      'base-goerli': `"base-goerli": {
+        url: process.env.BASE_RPC_URL,
+        accounts: [privateKey],
+        chainId: 84531
+      }`,
+      'base-sepolia': `"base-sepolia": {
+        url: process.env.BASE_RPC_URL,
+        accounts: [privateKey],
+        chainId: 84532
+      }`,
+      'base-mainnet': `"base-mainnet": {
+        url: process.env.BASE_RPC_URL,
+        accounts: [privateKey],
+        chainId: 8453
+      }`
+    }
+  };
+
+  return configs[blockchain][network];
+}
+
+/**
+ * Get valid networks for a blockchain platform
+ */
+function getValidNetworks(blockchain) {
+  const networks = {
+    solana: ['devnet', 'testnet', 'mainnet-beta', 'localnet'],
+    ethereum: ['goerli', 'sepolia', 'mainnet'],
+    base: ['base-goerli', 'base-sepolia', 'base-mainnet']
+  };
+  return networks[blockchain] || [];
+}
+
+/**
+ * Check if a network is valid for the given blockchain
+ */
+function isValidNetwork(blockchain, network) {
+  return getValidNetworks(blockchain).includes(network);
+}
+
+/**
+ * Get default network for a blockchain platform
+ */
+function getDefaultNetwork(blockchain) {
+  const defaults = {
+    solana: 'devnet',
+    ethereum: 'goerli',
+    base: 'base-goerli'
+  };
+  return defaults[blockchain] || 'devnet';
+}
+
+/**
+ * Load project configuration from .env and global config
+ */
+function loadProjectConfig() {
+  const config = {};
+  
+  // Try to load from .env
+  if (fs.existsSync('.env')) {
+    const envContent = fs.readFileSync('.env', 'utf8');
+    envContent.split('\n').forEach(line => {
+      const [key, value] = line.split('=');
+      if (key && value) {
+        config[key.trim()] = value.trim();
+      }
+    });
+  }
+
+  // Try to load from global config
+  const globalConfigPath = path.join(require('os').homedir(), '.arvil.json');
+  if (fs.existsSync(globalConfigPath)) {
+    try {
+      const globalConfig = JSON.parse(fs.readFileSync(globalConfigPath, 'utf8'));
+      Object.assign(config, globalConfig);
+    } catch (error) {
+      // Continue with just env config
+    }
+  }
+
+  return config;
 }
 
 module.exports = deploy; 

@@ -36,6 +36,21 @@ async function init(projectName) {
       
       fs.removeSync(projectPath);
     }
+
+    // Prompt for blockchain platform
+    const { blockchain } = await inquirer.prompt([
+      {
+        type: 'list',
+        name: 'blockchain',
+        message: 'Select blockchain platform:',
+        choices: [
+          { name: 'Solana', value: 'solana' },
+          { name: 'Ethereum', value: 'ethereum' },
+          { name: 'Base', value: 'base' }
+        ],
+        default: 'solana'
+      }
+    ]);
     
     fs.mkdirSync(projectPath);
     
@@ -44,34 +59,41 @@ async function init(projectName) {
     fs.mkdirSync(path.join(projectPath, 'tests'));
     fs.mkdirSync(path.join(projectPath, 'build'));
     
-    // Copy templates
-    const templatesDir = path.join(__dirname, '../templates');
-    
-    // Create package.json
+    // Create package.json based on blockchain platform
     const packageJson = {
       name: projectName,
       version: '0.1.0',
-      description: 'Blockchain project created with ARVIL',
+      description: `${blockchain.charAt(0).toUpperCase() + blockchain.slice(1)} blockchain project created with ARVIL`,
       main: 'src/index.js',
       scripts: {
         start: 'node src/index.js',
-        test: 'jest',
-        build: 'arvil compile'
+        test: blockchain === 'solana' ? 'jest' : 'npx hardhat test',
+        build: blockchain === 'solana' ? 'arvil compile' : 'npx hardhat compile',
+        deploy: `arvil deploy --blockchain ${blockchain}`
       },
       keywords: [
         'blockchain',
-        'solana',
+        blockchain,
         'web3'
       ],
       author: '',
       license: 'MIT',
       dependencies: {
-        '@solana/web3.js': '^1.78.0',
-        '@solana/spl-token': '^0.3.7',
-        'dotenv': '^16.3.1'
+        'dotenv': '^16.3.1',
+        ...(blockchain === 'solana' ? {
+          '@solana/web3.js': '^1.78.0',
+          '@solana/spl-token': '^0.3.7'
+        } : {
+          'ethers': '^6.7.0'
+        })
       },
       devDependencies: {
-        'jest': '^29.5.0'
+        ...(blockchain === 'solana' ? {
+          'jest': '^29.5.0'
+        } : {
+          '@nomicfoundation/hardhat-toolbox': '^3.0.0',
+          'hardhat': '^2.17.0'
+        })
       }
     };
     
@@ -80,14 +102,21 @@ async function init(projectName) {
       JSON.stringify(packageJson, null, 2)
     );
     
-    // Create .env file
-    const envContent = `# Blockchain configuration
+    // Create .env file based on blockchain platform
+    const envContent = blockchain === 'solana' ? 
+      `# Blockchain configuration
 SOLANA_PRIVATE_KEY=
 SOLANA_NETWORK=devnet
 
 # API Keys
-OPENAI_API_KEY=
-`;
+OPENAI_API_KEY=` :
+      `# Blockchain configuration
+PRIVATE_KEY=
+${blockchain.toUpperCase()}_RPC_URL=
+ETHERSCAN_API_KEY=
+
+# API Keys
+OPENAI_API_KEY=`;
     
     fs.writeFileSync(path.join(projectPath, '.env'), envContent);
     
@@ -97,14 +126,16 @@ OPENAI_API_KEY=
 build
 dist
 coverage
-`;
+cache
+artifacts
+typechain-types`;
     
     fs.writeFileSync(path.join(projectPath, '.gitignore'), gitignoreContent);
     
     // Create README.md
     const readmeContent = `# ${projectName}
 
-A blockchain project created with ARVIL.
+A ${blockchain.charAt(0).toUpperCase() + blockchain.slice(1)} blockchain project created with ARVIL.
 
 ## Getting Started
 
@@ -122,82 +153,129 @@ npm start
 - \`tests/\` - Test files
 - \`build/\` - Compiled contracts
 
-## Deployment
+## Development
 
 \`\`\`bash
-# Deploy to Solana devnet
-arvil deploy --network devnet
+# Compile contracts
+npm run build
+
+# Run tests
+npm test
+
+# Deploy to ${blockchain === 'solana' ? 'Solana devnet' : blockchain === 'ethereum' ? 'Ethereum Goerli testnet' : 'Base Goerli testnet'}
+npm run deploy
 \`\`\`
 `;
     
     fs.writeFileSync(path.join(projectPath, 'README.md'), readmeContent);
     
-    // Create sample source file
-    const indexContent = `// Main application entry point
-console.log('Blockchain project initialized.');
+    // Create sample source files based on blockchain platform
+    if (blockchain === 'solana') {
+      const indexContent = `// Solana program entry point
+console.log('Solana project initialized.');
 
 // Your code here
 `;
-    
-    fs.writeFileSync(path.join(projectPath, 'src/index.js'), indexContent);
-    
-    // Create sample smart contract
-    const contractContent = `// Sample Solana program in Rust
-/*
-use solana_program::{
-    account_info::AccountInfo,
-    entrypoint,
-    entrypoint::ProgramResult,
-    pubkey::Pubkey,
-    msg,
-};
+      fs.writeFileSync(path.join(projectPath, 'src/index.js'), indexContent);
+    } else {
+      // Create Hardhat project structure for Ethereum/Base
+      const hardhatConfigContent = `require("@nomicfoundation/hardhat-toolbox");
+require('dotenv').config();
 
-// Declare the program's entrypoint
-entrypoint!(process_instruction);
+const privateKey = process.env.PRIVATE_KEY || "";
+const rpcUrl = process.env.${blockchain.toUpperCase()}_RPC_URL || "";
 
-// Program entrypoint implementation
-pub fn process_instruction(
-    program_id: &Pubkey,
-    accounts: &[AccountInfo],
-    instruction_data: &[u8],
-) -> ProgramResult {
-    msg!("Hello, Solana!");
-    Ok(())
+module.exports = {
+  solidity: "0.8.19",
+  networks: {
+    ${blockchain === 'ethereum' ? `
+    goerli: {
+      url: rpcUrl,
+      accounts: [privateKey]
+    },
+    sepolia: {
+      url: rpcUrl,
+      accounts: [privateKey]
+    }` : `
+    "base-goerli": {
+      url: rpcUrl,
+      accounts: [privateKey],
+      chainId: 84531
+    },
+    "base-sepolia": {
+      url: rpcUrl,
+      accounts: [privateKey],
+      chainId: 84532
+    }`}
+  },
+  etherscan: {
+    apiKey: process.env.ETHERSCAN_API_KEY
+  }
+};`;
+      
+      fs.writeFileSync(path.join(projectPath, 'hardhat.config.js'), hardhatConfigContent);
+      
+      // Create contracts directory and sample contract
+      fs.mkdirSync(path.join(projectPath, 'contracts'));
+      const sampleContract = `// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.19;
+
+contract SimpleStorage {
+    uint256 private value;
+
+    event ValueChanged(uint256 newValue);
+
+    function setValue(uint256 newValue) public {
+        value = newValue;
+        emit ValueChanged(newValue);
+    }
+
+    function getValue() public view returns (uint256) {
+        return value;
+    }
+}`;
+      
+      fs.writeFileSync(path.join(projectPath, 'contracts/SimpleStorage.sol'), sampleContract);
+      
+      // Create scripts directory and deploy script
+      fs.mkdirSync(path.join(projectPath, 'scripts'));
+      const deployScript = `const hre = require("hardhat");
+
+async function main() {
+  const SimpleStorage = await hre.ethers.getContractFactory("SimpleStorage");
+  const simpleStorage = await SimpleStorage.deploy();
+
+  await simpleStorage.waitForDeployment();
+
+  console.log(
+    \`SimpleStorage deployed to \${await simpleStorage.getAddress()}\`
+  );
 }
-*/
 
-// This is a comment placeholder for a real Solana program
-// Use 'arvil assist' for help creating a real smart contract
-`;
-    
-    fs.writeFileSync(path.join(projectPath, 'src/program.rs'), contractContent);
-    
-    // Create sample test file
-    const testContent = `// Sample test file
-describe('Sample Test', () => {
-  it('should pass', () => {
-    expect(true).toBe(true);
-  });
-});
-`;
-    
-    fs.writeFileSync(path.join(projectPath, 'tests/sample.test.js'), testContent);
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});`;
+      
+      fs.writeFileSync(path.join(projectPath, 'scripts/deploy.js'), deployScript);
+    }
+
+    // Register the project
+    registerProject(projectName, projectPath, blockchain);
     
     spinner.succeed(`Project ${projectName} created successfully!`);
     
-    // After project creation is successful, register it in ARVIL's project registry
-    registerProject(projectName, projectPath, 'solana');
-    
-    console.log(chalk.green(`\n✅ Project registered with ARVIL. You can now use ARVIL commands in this project.`));
-    
-    console.log('\n' + chalk.green('Next steps:'));
+    console.log(chalk.green('\nNext steps:'));
     console.log(chalk.cyan(`  cd ${projectName}`));
     console.log(chalk.cyan('  npm install'));
-    console.log(chalk.cyan('  arvil assist "Create a token contract"'));
+    if (blockchain !== 'solana') {
+      console.log(chalk.cyan('  npx hardhat compile'));
+    }
+    console.log(chalk.cyan(`  arvil deploy --blockchain ${blockchain}`));
     
   } catch (error) {
-    spinner.fail('Failed to create project');
-    console.error(chalk.red(error));
+    spinner.fail('Project creation failed');
+    console.error(chalk.red(error.message));
   }
 }
 
