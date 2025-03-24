@@ -1,6 +1,6 @@
 {
   "name": "arvil-cli",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "ARVIL - Multi-Chain AI Engineer Assistant for Solana, Ethereum, and Base",
   "main": "src/index.js",
   "scripts": {
