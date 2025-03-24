@@ -13,7 +13,7 @@ const dotenv = require('dotenv');
 dotenv.config();
 
 // Version
-const VERSION = '0.2.4';
+const VERSION = '0.2.5';
 
 // Add error handling to prevent crashes
 process.on('uncaughtException', (error) => {
@@ -58,11 +58,14 @@ try {
   }
 }
 
-// Check if OpenAI API key is set
+// Check if OpenAI API key is set and valid
 const checkApiKey = () => {
   if (!process.env.OPENAI_API_KEY) {
     console.log(chalk.yellow('Warning: OPENAI_API_KEY is not set. Some features may not work properly.'));
     console.log(chalk.yellow('Run `arvil config` to set up your API keys.'));
+  } else if (!process.env.OPENAI_API_KEY.startsWith('sk-')) {
+    console.log(chalk.yellow('Warning: OPENAI_API_KEY does not appear to be valid. It should start with "sk-".'));
+    console.log(chalk.yellow('Run `arvil config` to set up your API keys correctly.'));
   }
 };
 

@@ -282,3 +282,13 @@ ARVIL has moved to a new official repository:
 - **Documentation Links**: All documentation links now point to the correct repository
 - **Issue Reporting**: Bug reports can now be submitted to the proper location
 - **Package Metadata**: NPM package information updated for better discoverability 
+
+## API Key Handling in v0.2.5
+
+ARVIL now has improved handling for OpenAI API keys:
+
+- **Multi-line Key Support**: Properly handles API keys that span multiple lines
+- **Whitespace Cleanup**: Automatically removes any whitespace, newlines or special characters from API keys
+- **Better Validation**: Improved validation of API key format
+- **Configuration Storage**: Properly stores and loads API keys from global config
+- **Enhanced Error Messages**: Clearer error messages when API keys are invalid 

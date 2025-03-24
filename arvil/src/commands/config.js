@@ -60,7 +60,7 @@ async function config() {
   const cleanApiKey = (key) => {
     if (!key) return '';
     // Remove all whitespace, newlines, and quotation marks
-    return key.replace(/[\s\n'"]+/g, '');
+    return key.replace(/[\s\n\r'"]+/g, '');
   };
   
   // Prompt for OpenAI API key
@@ -80,7 +80,7 @@ async function config() {
   // Validate the OpenAI API key format
   const isValidOpenAIKey = (key) => {
     // Basic format validation
-    const pattern = /^(sk-|sk-org-)[a-zA-Z0-9]{20,}$/;
+    const pattern = /^(sk-)[a-zA-Z0-9_-]{20,}$/;
     
     if (!pattern.test(key)) {
       console.log(chalk.yellow('Warning: The API key format may not be valid. OpenAI keys typically start with "sk-" followed by characters.'));

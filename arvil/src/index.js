@@ -17,11 +17,19 @@ if (fs.existsSync(globalConfigPath)) {
     // Set environment variables from global config if not already set
     for (const [key, value] of Object.entries(globalConfig)) {
       if (!process.env[key]) {
-        process.env[key] = value;
+        // Clean multi-line values and strip any unexpected characters
+        if (typeof value === 'string') {
+          // Clean any multi-line API keys or values by removing whitespace, newlines, etc.
+          const cleanedValue = value.replace(/[\s\n\r]+/g, '');
+          process.env[key] = cleanedValue;
+        } else {
+          process.env[key] = value;
+        }
       }
     }
   } catch (error) {
-    // Ignore errors reading global config
+    // Log the error for better debugging but continue execution
+    console.error(`Error loading global config: ${error.message}`);
   }
 }
 

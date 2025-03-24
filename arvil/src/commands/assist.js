@@ -39,6 +39,12 @@ const executionStats = {
 // Auto-execution settings
 const AUTO_EXECUTE = true; // Set to true to auto-execute without prompting
 
+// Extract a simple function to clean the API key
+function cleanApiKey(key) {
+  if (!key) return '';
+  return key.replace(/[\s\n\r'"]+/g, '');
+}
+
 /**
  * Get AI assistance for a specific task
  * @param {string} query - The query to get assistance for
@@ -84,7 +90,7 @@ async function assist(query) {
     
     if (!openai) {
       openai = new openaiModule({
-        apiKey: process.env.OPENAI_API_KEY
+        apiKey: cleanApiKey(process.env.OPENAI_API_KEY)
       });
     }
   } catch (error) {
@@ -890,7 +896,7 @@ async function attemptErrorResolution(failedCommand, errorMessage) {
         openaiModule = OpenAI;
       }
       openai = new openaiModule({
-        apiKey: process.env.OPENAI_API_KEY
+        apiKey: cleanApiKey(process.env.OPENAI_API_KEY)
       });
     }
     
