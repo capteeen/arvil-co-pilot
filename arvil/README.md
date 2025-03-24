@@ -1,8 +1,8 @@
-# ARVIL - Blockchain AI Engineer
+# ARVIL - Multi-Chain AI Engineer
 
 ![ARVIL Banner](https://github.com/capteeen/arvil-co-pilot/raw/main/docs/assets/arvil-banner.png)
 
-ARVIL (Advanced Robust Virtual Innovation Lab) is an AI-powered CLI tool that helps developers create, deploy, and manage blockchain applications on Solana. It combines the power of AI assistance with blockchain development tools to streamline your workflow.
+ARVIL (Advanced Robust Virtual Innovation Lab) is an AI-powered CLI tool that helps developers create, deploy, and manage blockchain applications across multiple chains including Solana, Ethereum, and Base. It combines the power of AI assistance with blockchain development tools to streamline your workflow.
 
 [![NPM Version](https://img.shields.io/npm/v/arvil-cli.svg?style=flat)](https://www.npmjs.org/package/arvil-cli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -10,9 +10,9 @@ ARVIL (Advanced Robust Virtual Innovation Lab) is an AI-powered CLI tool that he
 ## Features
 
 - 🤖 **AI-Powered Assistance**: Get help with coding, debugging, and optimization
-- 🏗️ **Project Scaffolding**: Create new blockchain projects with the right structure
-- ⛓️ **Solana Integration**: Deploy and interact with Solana networks
-- 💡 **Smart Contract Generation**: Create token contracts, NFTs, and more
+- 🏗️ **Multi-Chain Support**: Build on Solana, Ethereum, and Base networks
+- ⛓️ **Flexible Deployment**: Deploy to any supported network with simple commands
+- 💡 **Smart Contract Generation**: Create tokens, NFTs, and custom contracts
 - 🛠️ **Development Tools**: Compile, test, and deploy with simple commands
 
 ## Installation
@@ -31,19 +31,36 @@ yarn global add arvil-cli
 # Set up your configuration
 arvil config
 
-# Initialize a new project
+# Initialize a new project (select your preferred blockchain)
 arvil init my-blockchain-project
 cd my-blockchain-project
 
 # Get AI assistance
-arvil assist "Create a simple token contract on Solana"
+arvil assist "Create a simple token contract"
 
 # Compile your contract
-arvil compile
+npm run build
 
-# Deploy to Solana devnet
-arvil deploy --network devnet
+# Deploy to your chosen network
+arvil deploy --blockchain <solana|ethereum|base> --network <network>
 ```
+
+## Supported Networks
+
+### Solana
+- Devnet (recommended for development)
+- Testnet
+- Mainnet Beta
+
+### Ethereum
+- Goerli Testnet (recommended for development)
+- Sepolia Testnet
+- Mainnet
+
+### Base
+- Base Goerli Testnet (recommended for development)
+- Base Sepolia Testnet
+- Base Mainnet
 
 ## Commands
 
@@ -52,7 +69,7 @@ arvil deploy --network devnet
 | `arvil init [name]` | Create a new blockchain project |
 | `arvil assist [query]` | Get AI assistance on any blockchain topic |
 | `arvil compile` | Compile your smart contracts |
-| `arvil deploy` | Deploy your contracts to Solana |
+| `arvil deploy` | Deploy your contracts to any supported network |
 | `arvil test` | Run tests for your project |
 | `arvil config` | Configure your API keys and settings |
 
@@ -60,7 +77,9 @@ arvil deploy --network devnet
 
 - Node.js v16+
 - OpenAI API key for AI features
-- Solana CLI tools for deployment (installed automatically when needed)
+- Network-specific requirements:
+  - Solana: Solana CLI tools (installed automatically)
+  - Ethereum/Base: Private key and RPC URL
 
 ## Documentation
 
@@ -72,6 +91,65 @@ For detailed documentation, see:
 ## License
 
 MIT 
+
+## New Features in v0.3.0
+
+ARVIL now supports multiple blockchain networks:
+
+- **Multi-Chain Support**: Build and deploy on Solana, Ethereum, and Base networks
+- **Network Selection**: Choose your preferred blockchain during project initialization
+- **Flexible Configuration**: Set different networks for development and production
+- **Smart Contract Templates**: Get started quickly with chain-specific templates
+- **Hardhat Integration**: Seamless development experience for EVM chains
+
+### Example Usage
+
+```bash
+# Create a new Ethereum project
+arvil init my-eth-project
+# Select 'ethereum' when prompted for blockchain
+
+# Create a new Base project
+arvil init my-base-project
+# Select 'base' when prompted for blockchain
+
+# Deploy to different networks
+arvil deploy --blockchain ethereum --network goerli
+arvil deploy --blockchain base --network base-goerli
+arvil deploy --blockchain solana --network devnet
+```
+
+### Network Configuration
+
+Each blockchain platform comes with its own configuration:
+
+```bash
+# Ethereum/Base Configuration
+PRIVATE_KEY=your_private_key
+ETHEREUM_RPC_URL=your_ethereum_rpc_url
+BASE_RPC_URL=your_base_rpc_url
+ETHERSCAN_API_KEY=your_etherscan_key
+
+# Solana Configuration
+SOLANA_PRIVATE_KEY=your_solana_keypair
+SOLANA_NETWORK=devnet
+```
+
+### Project Structure
+
+Projects are now organized based on the selected blockchain:
+
+```
+my-project/
+├── src/                 # Source code
+├── contracts/          # Smart contracts (Ethereum/Base)
+├── scripts/           # Deployment scripts
+├── tests/            # Test files
+├── hardhat.config.js  # Hardhat config (Ethereum/Base)
+└── package.json
+```
+
+## Previous Features
 
 ## New Features in v0.1.5
 
